@@ -12,6 +12,7 @@ on:
     branches:
       - main
       - dev
+      - test-phase2
     paths:
       - 'terraform-aws-infra/**'
       - '.github/workflows/terraform-plan.yml'
