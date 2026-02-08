@@ -10,8 +10,8 @@ output "alb_arn" {
   value = aws_lb.this.arn
 }
 
-output "n8n_target_group_arn" {
-  value = aws_lb_target_group.n8n.arn
+output "service_target_group_arn" {
+  value = aws_lb_target_group.service.arn
 }
 
 
