@@ -2,7 +2,6 @@
 # ALB + Target Group + Listeners
 ############################################
 
-
 resource "aws_lb" "this" {
   name               = "${var.project}-${var.env}-alb"
   load_balancer_type = "application"
