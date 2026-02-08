@@ -60,7 +60,7 @@ resource "aws_route_table_association" "public" {
 # Security Groups
 ############################################
 
-# ALB SG: inbound 443 from internet; outbound to n8n SG on app port
+# ALB SG: inbound 443 from internet; outbound to service SG on app port
 resource "aws_security_group" "alb" {
   name        = "${var.project}-${var.env}-alb-sg"
   description = "ALB SG"
@@ -88,53 +88,53 @@ resource "aws_vpc_security_group_ingress_rule" "alb_80_in" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
-# n8n SG: inbound only from ALB SG on app port; no SSH
-resource "aws_security_group" "n8n" {
-  name        = "${var.project}-${var.env}-n8n-sg"
-  description = "n8n app SG (only from ALB on app port)"
+# service SG: inbound only from ALB SG on app port; no SSH
+resource "aws_security_group" "service" {
+  name        = "${var.project}-${var.env}-service-sg"
+  description = "service app SG (only from ALB on app port)"
   vpc_id      = aws_vpc.this.id
-  tags        = merge(local.tags, { Name = "${var.project}-${var.env}-n8n-sg" })
+  tags        = merge(local.tags, { Name = "${var.project}-${var.env}-service-sg" })
 }
 
-resource "aws_vpc_security_group_ingress_rule" "n8n_from_alb" {
-  security_group_id            = aws_security_group.n8n.id
+resource "aws_vpc_security_group_ingress_rule" "service_from_alb" {
+  security_group_id            = aws_security_group.service.id
   description                  = "App port from ALB SG"
   ip_protocol                  = "tcp"
-  from_port                    = var.n8n_app_port
-  to_port                      = var.n8n_app_port
+  from_port                    = var.service_app_port
+  to_port                      = var.service_app_port
   referenced_security_group_id = aws_security_group.alb.id
 }
 
-resource "aws_vpc_security_group_egress_rule" "alb_to_n8n" {
+resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
   security_group_id            = aws_security_group.alb.id
-  description                  = "To n8n SG on app port"
+  description                  = "To service SG on app port"
   ip_protocol                  = "tcp"
-  from_port                    = var.n8n_app_port
-  to_port                      = var.n8n_app_port
-  referenced_security_group_id = aws_security_group.n8n.id
+  from_port                    = var.service_app_port
+  to_port                      = var.service_app_port
+  referenced_security_group_id = aws_security_group.service.id
 }
 
-# RDS SG: inbound only from n8n SG on 5432
+# RDS SG: inbound only from service SG on 5432
 resource "aws_security_group" "rds" {
   name        = "${var.project}-${var.env}-rds-sg"
-  description = "RDS SG (only from n8n on 5432)"
+  description = "RDS SG (only from service on 5432)"
   vpc_id      = aws_vpc.this.id
   tags        = merge(local.tags, { Name = "${var.project}-${var.env}-rds-sg" })
 }
 
-resource "aws_vpc_security_group_ingress_rule" "rds_from_n8n" {
+resource "aws_vpc_security_group_ingress_rule" "rds_from_service" {
   security_group_id            = aws_security_group.rds.id
-  description                  = "Postgres from n8n SG"
+  description                  = "Postgres from service SG"
   ip_protocol                  = "tcp"
   from_port                    = 5432
   to_port                      = 5432
-  referenced_security_group_id = aws_security_group.n8n.id
+  referenced_security_group_id = aws_security_group.service.id
 }
 
 # Egress (explicit)
-resource "aws_vpc_security_group_egress_rule" "n8n_all_out" {
-  security_group_id = aws_security_group.n8n.id
-  description       = "n8n outbound"
+resource "aws_vpc_security_group_egress_rule" "service_all_out" {
+  security_group_id = aws_security_group.service.id
+  description       = "service outbound"
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
 }
