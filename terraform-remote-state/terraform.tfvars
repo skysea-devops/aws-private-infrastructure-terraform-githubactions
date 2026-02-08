@@ -1,5 +1,5 @@
 aws_region           = "us-east-1"
 project              = "n8n"
 env                  = "dev"
-tf_state_bucket_name = "n8n-selfhosted-terraform-state-v1"
+tf_state_bucket_name = "test-terraform-state-v1"
 dynamodb_table_name  = "terraform-locks"
