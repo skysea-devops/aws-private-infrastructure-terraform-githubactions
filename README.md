@@ -35,6 +35,31 @@ This phase prepares secure, keyless access for GitHub Actions to AWS using **OID
 
 To allow GitHub Actions to authenticate with AWS, an **OIDC provider** must be configured in AWS IAM.
 
+AWS CLI Setup to your local:
+
+```bash
+AWS CLI Local Setup macOS:
+# Homebrew
+brew install awscli
+
+aws --version
+
+aws configure
+
+write those when asked:
+AWS Access Key ID [None]: <your-accesskey>
+AWS Secret Access Key [None]: <your-secret-accesskey>
+Default region name [None]: <region-name>
+Default output format [None]: json
+
+# Account test
+aws sts get-caller-identity
+
+
+```
+
+Run the following command using AWS CLI or create the provider via the AWS Console.
+
 ```bash
 # Using AWS Console or AWS CLI:
 aws iam create-open-id-connect-provider \
