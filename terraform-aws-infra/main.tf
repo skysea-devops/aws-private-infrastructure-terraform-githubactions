@@ -15,11 +15,11 @@ resource "aws_lb" "this" {
   tags = merge(local.tags, { Name = "${var.project}-${var.env}-alb" })
 }
 
-resource "aws_lb_target_group" "n8n" {
-  name        = "${var.project}-${var.env}-n8n-tg"
+resource "aws_lb_target_group" "service" {
+  name        = "${var.project}-${var.env}-service-tg"
   vpc_id      = aws_vpc.this.id
   target_type = "ip"     # EC2 instance ile attach edeceksen "instance"
-  port        = var.n8n_app_port
+  port        = var.service_app_port
   protocol    = "HTTP"
 
   health_check {
@@ -33,7 +33,7 @@ resource "aws_lb_target_group" "n8n" {
     unhealthy_threshold = 3
   }
 
-  tags = merge(local.tags, { Name = "${var.project}-${var.env}-n8n-tg" })
+  tags = merge(local.tags, { Name = "${var.project}-${var.env}-service-tg" })
 }
 
 # Opsiyonel: 80 -> 443 redirect
@@ -54,7 +54,7 @@ resource "aws_lb_listener_rule" "host_forward" {
 
   action {
     type             = "forward"
-    target_group_arn = aws_lb_target_group.n8n.arn
+    target_group_arn = aws_lb_target_group.service.arn
   }
 
   condition {
