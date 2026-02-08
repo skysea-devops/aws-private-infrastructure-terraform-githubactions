@@ -1,0 +1,147 @@
+data "aws_availability_zones" "available" {}
+
+locals {
+  azs_effective = length(var.azs) > 0 ? var.azs : slice(data.aws_availability_zones.available.names, 0, 2)
+
+  tags = {
+    Project = var.project
+    Env     = var.env
+  }
+}
+
+############################################
+# VPC + Subnets + Routing (NO NAT)
+############################################
+
+resource "aws_vpc" "this" {
+  cidr_block           = var.vpc_cidr
+  enable_dns_support   = true
+  enable_dns_hostnames = true
+  tags                 = merge(local.tags, { Name = "${var.project}-${var.env}-vpc" })
+}
+
+resource "aws_internet_gateway" "this" {
+  vpc_id = aws_vpc.this.id
+  tags   = merge(local.tags, { Name = "${var.project}-${var.env}-igw" })
+}
+
+resource "aws_subnet" "public" {
+  for_each = { for idx, az in local.azs_effective : idx => az }
+
+  vpc_id                  = aws_vpc.this.id
+  availability_zone       = each.value
+  cidr_block              = var.public_subnet_cidrs[tonumber(each.key)]
+  map_public_ip_on_launch = true
+
+  tags = merge(local.tags, {
+    Name = "${var.project}-${var.env}-public-${each.value}"
+    Tier = "public"
+  })
+}
+
+resource "aws_route_table" "public" {
+  vpc_id = aws_vpc.this.id
+  tags   = merge(local.tags, { Name = "${var.project}-${var.env}-public-rt" })
+}
+
+resource "aws_route" "public_default" {
+  route_table_id         = aws_route_table.public.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.this.id
+}
+
+resource "aws_route_table_association" "public" {
+  for_each       = aws_subnet.public
+  subnet_id      = each.value.id
+  route_table_id = aws_route_table.public.id
+}
+
+############################################
+# Security Groups
+############################################
+
+# ALB SG: inbound 443 from internet; outbound to n8n SG on app port
+resource "aws_security_group" "alb" {
+  name        = "${var.project}-${var.env}-alb-sg"
+  description = "ALB SG"
+  vpc_id      = aws_vpc.this.id
+  tags        = merge(local.tags, { Name = "${var.project}-${var.env}-alb-sg" })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "alb_443_in" {
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTPS from Internet"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+# (Opsiyonel ama önerilir) HTTP redirect için 80 aç
+resource "aws_vpc_security_group_ingress_rule" "alb_80_in" {
+  count             = var.enable_http_redirect ? 1 : 0
+  security_group_id = aws_security_group.alb.id
+  description       = "HTTP from Internet (redirect to HTTPS)"
+  ip_protocol       = "tcp"
+  from_port         = 80
+  to_port           = 80
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+# n8n SG: inbound only from ALB SG on app port; no SSH
+resource "aws_security_group" "n8n" {
+  name        = "${var.project}-${var.env}-n8n-sg"
+  description = "n8n app SG (only from ALB on app port)"
+  vpc_id      = aws_vpc.this.id
+  tags        = merge(local.tags, { Name = "${var.project}-${var.env}-n8n-sg" })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "n8n_from_alb" {
+  security_group_id            = aws_security_group.n8n.id
+  description                  = "App port from ALB SG"
+  ip_protocol                  = "tcp"
+  from_port                    = var.n8n_app_port
+  to_port                      = var.n8n_app_port
+  referenced_security_group_id = aws_security_group.alb.id
+}
+
+resource "aws_vpc_security_group_egress_rule" "alb_to_n8n" {
+  security_group_id            = aws_security_group.alb.id
+  description                  = "To n8n SG on app port"
+  ip_protocol                  = "tcp"
+  from_port                    = var.n8n_app_port
+  to_port                      = var.n8n_app_port
+  referenced_security_group_id = aws_security_group.n8n.id
+}
+
+# RDS SG: inbound only from n8n SG on 5432
+resource "aws_security_group" "rds" {
+  name        = "${var.project}-${var.env}-rds-sg"
+  description = "RDS SG (only from n8n on 5432)"
+  vpc_id      = aws_vpc.this.id
+  tags        = merge(local.tags, { Name = "${var.project}-${var.env}-rds-sg" })
+}
+
+resource "aws_vpc_security_group_ingress_rule" "rds_from_n8n" {
+  security_group_id            = aws_security_group.rds.id
+  description                  = "Postgres from n8n SG"
+  ip_protocol                  = "tcp"
+  from_port                    = 5432
+  to_port                      = 5432
+  referenced_security_group_id = aws_security_group.n8n.id
+}
+
+# Egress (explicit)
+resource "aws_vpc_security_group_egress_rule" "n8n_all_out" {
+  security_group_id = aws_security_group.n8n.id
+  description       = "n8n outbound"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+resource "aws_vpc_security_group_egress_rule" "rds_all_out" {
+  security_group_id = aws_security_group.rds.id
+  description       = "RDS outbound"
+  ip_protocol       = "-1"
+  cidr_ipv4         = "0.0.0.0/0"
+}
