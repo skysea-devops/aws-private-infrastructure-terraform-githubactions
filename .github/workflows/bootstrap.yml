@@ -1,4 +1,3 @@
-
 # This workflow creates the foundational infrastructure for Terraform:
 # - S3 bucket for state storage with encryption and versioning
 # - DynamoDB table for state locking (prevents concurrent modifications)
@@ -6,10 +5,15 @@
 #
 # Run this ONCE before deploying main infrastructure
 
-name: Bootstrap (One-Time Setup)
+name: Bootstrap 
 
 on:  
-  workflow_dispatch:  
+  workflow_dispatch:
+    inputs:
+      bucket_name:
+        description: 'S3 bucket name (globally unique)'
+        required: true
+        default: 'n8n-terraform-state-v1'
 
 permissions:
   contents: read
@@ -17,6 +21,7 @@ permissions:
 
 env:
   AWS_REGION: us-east-1
+  TF_VERSION: 1.5.0  
 
 jobs: 
   bootstrap:  
@@ -26,15 +31,39 @@ jobs:
       run:
         working-directory: terraform-remote-state
     
-    steps:  # 
+    steps:
       - name: Checkout
         uses: actions/checkout@v4
+        
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-Bootstrap
+      
+      - name: Verify AWS identity
+        run: |
+          echo "Authenticated as:"
+          aws sts get-caller-identity
+          
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "AWS Account ID: $ACCOUNT_ID"
+          echo "AWS Region: ${{ env.AWS_REGION }}"
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
       
       - name: Terraform Init
-        run: terraform init 
+        run: terraform init
       
       - name: Terraform Plan
-        run: terraform plan -out=plan.tfplan
+        run: |
+          terraform plan \
+            -var="tf_state_bucket_name=${{ github.event.inputs.bucket_name }}" \
+            -out=plan.tfplan
       
       - name: Terraform Apply
         run: terraform apply -auto-approve plan.tfplan
