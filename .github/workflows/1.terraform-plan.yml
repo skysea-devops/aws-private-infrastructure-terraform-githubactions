@@ -5,7 +5,6 @@ name: Terraform Plan (Pull Request)
 # - Automatic formatting check
 # - Configuration validation
 # - Detailed execution plan
-# - Cost estimation (optional)
 # - PR comment with plan results
 
 on:
