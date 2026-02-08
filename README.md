@@ -24,6 +24,7 @@ Private AWS infrastructure provisioning using Terraform with S3 remote state, Dy
     ├── variables.tf
     ├── outputs.tf
     └── terraform.tfvars
+```
 
 ## Phase 1: CI/CD Bootstrap (Must Be Completed First)
 
@@ -55,7 +56,6 @@ Default output format [None]: json
 # Account test
 aws sts get-caller-identity
 
-
 ```
 
 Run the following command using AWS CLI or create the provider via the AWS Console.
@@ -66,6 +66,8 @@ aws iam create-open-id-connect-provider \
   --url https://token.actions.githubusercontent.com \
   --client-id-list sts.amazonaws.com \
   --thumbprint-list 6938fd4d98bab03faadb97b34396831e3780aea1
+```
+
 ### Create IAM Role for GitHub Actions
 
 Next, an IAM role must be created so that GitHub Actions workflows can assume it using `sts:AssumeRoleWithWebIdentity`.
@@ -78,7 +80,7 @@ Create the following trust policy file.
 
 **`role-trust-policy.json`**
 ```json
-{
+
   "Version": "2012-10-17",
   "Statement": [
     {
@@ -152,7 +154,7 @@ Steps:
 4. Provide a globally unique S3 bucket name, for example:
 
 ```text
-n8n-selfhosted-terraform-state-v1
+my-terraform-state-v1
 ```
 
 ---
