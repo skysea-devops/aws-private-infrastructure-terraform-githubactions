@@ -12,7 +12,7 @@ on:
   pull_request:
     branches:
       - main
-      - develop
+      - dev
     paths:
       - 'terraform-aws-infra/**'
       - '.github/workflows/terraform-plan.yml'

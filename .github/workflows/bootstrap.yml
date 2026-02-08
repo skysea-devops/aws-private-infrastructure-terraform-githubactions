@@ -181,7 +181,7 @@ jobs:
           echo "1. Open **AWS Console → Certificate Manager** (us-east-1 region)" >> $GITHUB_STEP_SUMMARY
           echo "2. Click **Request certificate**" >> $GITHUB_STEP_SUMMARY
           echo "3. Choose **Request a public certificate**" >> $GITHUB_STEP_SUMMARY
-          echo "4. Enter your domain name (e.g., \`n8n.example.com\` or \`*.example.com\`)" >> $GITHUB_STEP_SUMMARY
+          echo "4. Enter your domain name (e.g., \`service.example.com\` or \`*.example.com\`)" >> $GITHUB_STEP_SUMMARY
           echo "5. Select **DNS validation** (recommended)" >> $GITHUB_STEP_SUMMARY
           echo "6. Complete DNS validation by adding CNAME records to your DNS provider" >> $GITHUB_STEP_SUMMARY
           echo "7. Wait for certificate status to become **Issued** (5-30 minutes)" >> $GITHUB_STEP_SUMMARY

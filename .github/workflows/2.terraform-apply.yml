@@ -235,7 +235,7 @@ jobs:
             fi
             
             # Target Group ARN
-            if TG_ARN=$(jq -r '.n8n_target_group_arn.value // empty' terraform-outputs.json); then
+            if TG_ARN=$(jq -r '.service_target_group_arn.value // empty' terraform-outputs.json); then
               [ -n "$TG_ARN" ] && echo "| **Target Group ARN** | \`${TG_ARN:0:50}...\` |" >> $GITHUB_STEP_SUMMARY
             fi
           fi
@@ -274,7 +274,7 @@ jobs:
               echo "" >> $GITHUB_STEP_SUMMARY
               echo '```dns' >> $GITHUB_STEP_SUMMARY
               echo "Type:  CNAME" >> $GITHUB_STEP_SUMMARY
-              echo "Name:  n8n (or your subdomain)" >> $GITHUB_STEP_SUMMARY
+              echo "Name:  service (or your subdomain)" >> $GITHUB_STEP_SUMMARY
               echo "Value: $ALB_DNS" >> $GITHUB_STEP_SUMMARY
               echo "TTL:   300" >> $GITHUB_STEP_SUMMARY
               echo '```' >> $GITHUB_STEP_SUMMARY
