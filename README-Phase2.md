@@ -54,10 +54,10 @@ certificate_arn is correctly set.
 Local test (optional)
 ```bash
 terraform init \
-  -backend-config="bucket=n8n-selfhosted-terraform-state-v1" \
+  -backend-config="bucket=test-bucket-terraform-state-v1" \
   -backend-config="key=terraform.tfstate" \
   -backend-config="region=us-east-1" \
-  -backend-config="dynamodb_table=n8n-dev-terraform-locks" \
+  -backend-config="dynamodb_table=service-dev-terraform-locks" \
   -backend-config="encrypt=true"
 
 terraform plan -var="kms_key_arn=arn:aws:kms:..." -var="certificate_arn=arn:aws:acm:..."
