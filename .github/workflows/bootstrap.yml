@@ -36,6 +36,12 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
           role-session-name: GitHubActions-Bootstrap
+
+      - name: Debug OIDC token
+        run: |
+            echo "Repository: ${{ github.repository }}"
+            echo "Ref: ${{ github.ref }}"
+            echo "Expected sub: repo:${{ github.repository }}:*"
       
       - name: Verify AWS identity
         run: |
