@@ -1,0 +1,252 @@
+name: 🔧 Bootstrap (One-Time Setup)
+
+# This workflow creates the foundational infrastructure for Terraform:
+# - S3 bucket for state storage with encryption and versioning
+# - DynamoDB table for state locking (prevents concurrent modifications)
+# - KMS key for encrypting state files and secrets
+#
+# Run this ONCE before deploying main infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      tf_state_bucket_name:
+        description: 'Globally unique S3 bucket name for Terraform state'
+        required: true
+        default: 'test-bucket-terraform-state-v1'
+      confirm_bootstrap:
+        description: 'Type "yes" to confirm bootstrap execution'
+        required: true
+        default: 'no'
+
+permissions:
+  contents: read
+  id-token: write  # Required for OIDC authentication with AWS
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.0
+
+jobs:
+  bootstrap:
+    name: Bootstrap Infrastructure
+    runs-on: ubuntu-latest
+    
+    # Optional: Require manual approval for safety
+    # Uncomment the next line after creating 'bootstrap' environment in repo settings
+    # environment: bootstrap
+    
+    defaults:
+      run:
+        working-directory: terraform-remote-state
+
+    steps:
+      # ============================================================
+      # Step 1: Validation and Setup
+      # ============================================================
+      
+      - name: Validate confirmation input
+        run: |
+          if [ "${{ github.event.inputs.confirm_bootstrap }}" != "yes" ]; then
+            echo "::error::Bootstrap not confirmed. Please type 'yes' in the confirmation input."
+            exit 1
+          fi
+          echo "✅ Bootstrap confirmed by user"
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ============================================================
+      # Step 2: AWS Authentication
+      # ============================================================
+      
+      - name: Configure AWS credentials via OIDC
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-Bootstrap
+
+      - name: Verify AWS identity
+        run: |
+          echo "Authenticated as:"
+          aws sts get-caller-identity
+          
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "AWS Account ID: $ACCOUNT_ID"
+          echo "AWS Region: ${{ env.AWS_REGION }}"
+
+      # ============================================================
+      # Step 3: Terraform Setup and Validation
+      # ============================================================
+      
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Format Check
+        id: fmt
+        run: terraform fmt -check -recursive
+        continue-on-error: true
+
+      - name: Terraform Init
+        id: init
+        run: |
+          echo "Initializing Terraform..."
+          terraform init
+          echo "✅ Terraform initialized successfully"
+
+      - name: Terraform Validate
+        id: validate
+        run: |
+          terraform validate -no-color
+          echo "✅ Terraform configuration is valid"
+
+      # ============================================================
+      # Step 4: Plan and Review
+      # ============================================================
+      
+      - name: Terraform Plan
+        id: plan
+        run: |
+          echo "Creating Terraform execution plan..."
+          terraform plan -no-color -input=false \
+            -var="tf_state_bucket_name=${{ github.event.inputs.tf_state_bucket_name }}" \
+            -out=tfplan
+          
+          echo "### 📋 Terraform Plan Output" >> $GITHUB_STEP_SUMMARY
+          echo '```terraform' >> $GITHUB_STEP_SUMMARY
+          terraform show -no-color tfplan | head -100 >> $GITHUB_STEP_SUMMARY
+          echo '```' >> $GITHUB_STEP_SUMMARY
+
+      # ============================================================
+      # Step 5: Apply Infrastructure
+      # ============================================================
+      
+      - name: Terraform Apply
+        id: apply
+        run: |
+          echo "🚀 Applying Terraform configuration..."
+          terraform apply -auto-approve -input=false tfplan
+          echo "✅ Infrastructure created successfully"
+
+      # ============================================================
+      # Step 6: Extract and Store Outputs
+      # ============================================================
+      
+      - name: Extract Terraform Outputs
+        id: outputs
+        run: |
+          echo "Extracting Terraform outputs..."
+          echo "TF_STATE_BUCKET=$(terraform output -raw tf_state_bucket)" >> $GITHUB_OUTPUT
+          echo "TF_LOCK_TABLE=$(terraform output -raw tf_lock_table)" >> $GITHUB_OUTPUT
+          echo "KMS_KEY_ARN=$(terraform output -raw kms_key_arn)" >> $GITHUB_OUTPUT
+          echo "KMS_KEY_ID=$(terraform output -raw kms_key_id)" >> $GITHUB_OUTPUT
+
+      - name: Create deployment summary
+        run: |
+          echo "## ✅ Bootstrap Complete!" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "The following AWS resources have been created:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 📦 Created Resources" >> $GITHUB_STEP_SUMMARY
+          echo "| Resource Type | Name/ARN |" >> $GITHUB_STEP_SUMMARY
+          echo "|---------------|----------|" >> $GITHUB_STEP_SUMMARY
+          echo "| **S3 Bucket** | \`${{ steps.outputs.outputs.TF_STATE_BUCKET }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **DynamoDB Table** | \`${{ steps.outputs.outputs.TF_LOCK_TABLE }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "| **KMS Key ARN** | \`${{ steps.outputs.outputs.KMS_KEY_ARN }}\` |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "## 📝 Required Next Steps" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 1️⃣ Add Secrets to GitHub Repository" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Navigate to: **Settings → Secrets and variables → Actions → New repository secret**" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Create the following secrets (copy values from table above):" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Secret Name:** \`TF_STATE_BUCKET\`" >> $GITHUB_STEP_SUMMARY
+          echo "  - **Value:** \`${{ steps.outputs.outputs.TF_STATE_BUCKET }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Secret Name:** \`TF_LOCK_TABLE\`" >> $GITHUB_STEP_SUMMARY
+          echo "  - **Value:** \`${{ steps.outputs.outputs.TF_LOCK_TABLE }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Secret Name:** \`KMS_KEY_ARN\`" >> $GITHUB_STEP_SUMMARY
+          echo "  - **Value:** \`${{ steps.outputs.outputs.KMS_KEY_ARN }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 2️⃣ Create ACM SSL/TLS Certificate" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Open **AWS Console → Certificate Manager** (us-east-1 region)" >> $GITHUB_STEP_SUMMARY
+          echo "2. Click **Request certificate**" >> $GITHUB_STEP_SUMMARY
+          echo "3. Choose **Request a public certificate**" >> $GITHUB_STEP_SUMMARY
+          echo "4. Enter your domain name (e.g., \`n8n.example.com\` or \`*.example.com\`)" >> $GITHUB_STEP_SUMMARY
+          echo "5. Select **DNS validation** (recommended)" >> $GITHUB_STEP_SUMMARY
+          echo "6. Complete DNS validation by adding CNAME records to your DNS provider" >> $GITHUB_STEP_SUMMARY
+          echo "7. Wait for certificate status to become **Issued** (5-30 minutes)" >> $GITHUB_STEP_SUMMARY
+          echo "8. Copy the certificate ARN and add it to GitHub Secrets as \`CERTIFICATE_ARN\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 3️⃣ Deploy Main Infrastructure" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Once secrets are added:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "1. Create a feature branch: \`git checkout -b feature/add-infrastructure\`" >> $GITHUB_STEP_SUMMARY
+          echo "2. Make your infrastructure changes in \`terraform-aws-infra/\`" >> $GITHUB_STEP_SUMMARY
+          echo "3. Push and create a Pull Request" >> $GITHUB_STEP_SUMMARY
+          echo "4. Review the Terraform plan in PR comments" >> $GITHUB_STEP_SUMMARY
+          echo "5. Merge PR to trigger automatic deployment" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "---" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "💡 **Tip:** Download the bootstrap outputs artifact for reference." >> $GITHUB_STEP_SUMMARY
+
+      - name: Save outputs as artifact
+        run: |
+          cat > bootstrap-outputs.txt << EOF
+          # Bootstrap Infrastructure Outputs
+          # Generated: $(date -u +"%Y-%m-%d %H:%M:%S UTC")
+          
+          TF_STATE_BUCKET=${{ steps.outputs.outputs.TF_STATE_BUCKET }}
+          TF_LOCK_TABLE=${{ steps.outputs.outputs.TF_LOCK_TABLE }}
+          KMS_KEY_ARN=${{ steps.outputs.outputs.KMS_KEY_ARN }}
+          KMS_KEY_ID=${{ steps.outputs.outputs.KMS_KEY_ID }}
+          
+          # Add these to GitHub Secrets:
+          # Settings → Secrets and variables → Actions → New repository secret
+          EOF
+
+      - name: Upload bootstrap outputs
+        uses: actions/upload-artifact@v4
+        with:
+          name: bootstrap-outputs
+          path: terraform-remote-state/bootstrap-outputs.txt
+          retention-days: 30
+
+      # ============================================================
+      # Step 7: Error Handling
+      # ============================================================
+      
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "::error::Bootstrap failed! Check the logs above for details."
+          echo "## ❌ Bootstrap Failed" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Common Issues and Solutions:" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**1. S3 Bucket Name Already Exists**" >> $GITHUB_STEP_SUMMARY
+          echo "   - S3 bucket names must be globally unique" >> $GITHUB_STEP_SUMMARY
+          echo "   - Try a different bucket name with a unique suffix" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**2. Permission Denied Errors**" >> $GITHUB_STEP_SUMMARY
+          echo "   - Verify \`AWS_ROLE_ARN\` secret is correct" >> $GITHUB_STEP_SUMMARY
+          echo "   - Ensure IAM role has required permissions (S3, DynamoDB, KMS, IAM)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**3. OIDC Authentication Failed**" >> $GITHUB_STEP_SUMMARY
+          echo "   - Check OIDC provider exists in AWS IAM" >> $GITHUB_STEP_SUMMARY
+          echo "   - Verify trust policy in IAM role includes correct repository path" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**4. Terraform Syntax Errors**" >> $GITHUB_STEP_SUMMARY
+          echo "   - Run \`terraform fmt\` and \`terraform validate\` locally" >> $GITHUB_STEP_SUMMARY
+          echo "   - Check for typos in variable names" >> $GITHUB_STEP_SUMMARY
