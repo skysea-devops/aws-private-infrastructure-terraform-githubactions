@@ -1,5 +1,5 @@
 aws_region           = "us-east-1"
-project              = "n8n"
+project              = "service"
 env                  = "dev"
 tf_state_bucket_name = "test-bucket-terraform-state-v1"
 dynamodb_table_name  = "terraform-locks"
