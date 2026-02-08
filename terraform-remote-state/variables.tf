@@ -5,15 +5,15 @@ variable "aws_region" {
 
 variable "project" {
   type    = string
-  default = "n8n"
+  default = "service"
 }
 
 variable "env" {
   type    = string
-  default = "dev2"
+  default = "dev"
 }
 
-# S3 bucket name global unique olmalı
+# S3 bucket name 
 variable "tf_state_bucket_name" {
   type = string
 }
