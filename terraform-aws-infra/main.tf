@@ -1,121 +1,116 @@
 ############################################
-# ALB + Target Group + Listeners
+# ACM Certificate
 ############################################
 
-resource "aws_lb" "this" {
-  name               = "${var.project}-${var.env}-alb"
-  load_balancer_type = "application"
-  internal           = false
+resource "aws_acm_certificate" "this" {
+  domain_name       = var.host_header
+  validation_method = "DNS"
 
-  security_groups = [aws_security_group.alb.id]
-  subnets         = [for s in aws_subnet.public : s.id]
-
-  enable_deletion_protection = false
-
-  tags = merge(local.tags, { Name = "${var.project}-${var.env}-alb" })
-}
-
-resource "aws_lb_target_group" "service" {
-  name        = "${var.project}-${var.env}-service-tg"
-  vpc_id      = aws_vpc.this.id
-  target_type = "ip"     # EC2 instance ile attach edeceksen "instance"
-  port        = var.service_app_port
-  protocol    = "HTTP"
-
-  health_check {
-    enabled             = true
-    protocol            = "HTTP"
-    path                = var.health_check_path
-    matcher             = "200-399"
-    interval            = 30
-    timeout             = 5
-    healthy_threshold   = 2
-    unhealthy_threshold = 3
+  lifecycle {
+    create_before_destroy = true
   }
 
-  tags = merge(local.tags, { Name = "${var.project}-${var.env}-service-tg" })
+  tags = merge(local.tags, { Name = "${var.project}-${var.env}-cert" })
 }
 
-# Opsiyonel: 80 -> 443 redirect
-resource "aws_lb_listener" "http" {
-  count             = var.enable_http_redirect ? 1 : 0
+resource "aws_acm_certificate_validation" "this" {
+  certificate_arn = aws_acm_certificate.this.arn
+
+  timeouts {
+    create = "45m"
+  }
+}
+
+############################################
+# Secrets Manager — OIDC client secret
+# Run ONCE before terraform apply:
+# aws secretsmanager create-secret \
+#   --name "n8n/prod/entra-oidc-client-secret" \
+#   --secret-string "your-client-secret" \
+#   --region us-east-1
+############################################
+
+data "aws_secretsmanager_secret" "oidc" {
+  name = "${var.project}/${var.env}/entra-oidc-client-secret"
+}
+
+data "aws_secretsmanager_secret_version" "oidc" {
+  secret_id = data.aws_secretsmanager_secret.oidc.id
+}
+
+############################################
+# ALB egress to Azure — required for OIDC
+############################################
+
+resource "aws_vpc_security_group_egress_rule" "alb_to_azure_oidc" {
+  security_group_id = aws_security_group.alb.id
+  description       = "ALB to Azure OIDC endpoints for token verification"
+  ip_protocol       = "tcp"
+  from_port         = 443
+  to_port           = 443
+  cidr_ipv4         = "0.0.0.0/0"
+}
+
+############################################
+# HTTPS listener — default 403
+############################################
+
+resource "aws_lb_listener" "https" {
   load_balancer_arn = aws_lb.this.arn
-  port              = 80
-  protocol          = "HTTP"
+  port              = 443
+  protocol          = "HTTPS"
+  ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
+  certificate_arn   = aws_acm_certificate_validation.this.certificate_arn
 
+  default_action {
+    type = "fixed-response"
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Forbidden"
+      status_code  = "403"
+    }
+  }
 }
 
+############################################
+# OIDC auth + forward rule
+############################################
 
-# Host-based rule (isteğe bağlı)
-resource "aws_lb_listener_rule" "host_forward" {
+resource "aws_lb_listener_rule" "oidc_forward" {
   count        = var.host_header != "" ? 1 : 0
   listener_arn = aws_lb_listener.https.arn
   priority     = 10
-
-  action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.service.arn
-  }
 
   condition {
     host_header {
       values = [var.host_header]
     }
   }
-}
 
-############################################
-# VPC Flow Logs -> CloudWatch Logs
-############################################
+  # Step 1: authenticate against Entra ID
+  action {
+    type  = "authenticate-oidc"
+    order = 1
 
-resource "aws_cloudwatch_log_group" "vpc_flow" {
-  name              = "/aws/vpc/${var.project}-${var.env}/flowlogs"
-  retention_in_days = var.flow_logs_retention_days
-  kms_key_id        = var.kms_key_arn
-  tags              = local.tags
-}
-
-data "aws_iam_policy_document" "flowlogs_assume" {
-  statement {
-    effect = "Allow"
-    principals {
-      type        = "Service"
-      identifiers = ["vpc-flow-logs.amazonaws.com"]
+    authenticate_oidc {
+      issuer                     = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
+      authorization_endpoint     = "https://login.microsoftonline.com/${var.entra_tenant_id}/oauth2/v2.0/authorize"
+      token_endpoint             = "https://login.microsoftonline.com/${var.entra_tenant_id}/oauth2/v2.0/token"
+      user_info_endpoint         = "https://graph.microsoft.com/oidc/userinfo"
+      client_id                  = var.entra_client_id
+      client_secret              = data.aws_secretsmanager_secret_version.oidc.secret_string
+      scope                      = "openid email profile"
+      on_unauthenticated_request = "authenticate"
+      session_cookie_name        = "AWSELBAuthSessionCookie"
+      session_timeout            = var.oidc_session_timeout
     }
-    actions = ["sts:AssumeRole"]
   }
-}
 
-resource "aws_iam_role" "flowlogs" {
-  name               = "${var.project}-${var.env}-vpc-flowlogs-role"
-  assume_role_policy = data.aws_iam_policy_document.flowlogs_assume.json
-  tags               = local.tags
-}
-
-data "aws_iam_policy_document" "flowlogs_write" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "logs:CreateLogStream",
-      "logs:PutLogEvents",
-      "logs:DescribeLogGroups",
-      "logs:DescribeLogStreams"
-    ]
-    resources = ["${aws_cloudwatch_log_group.vpc_flow.arn}:*"]
+  # Step 2: forward to single target group — use target_group_arn NOT forward block
+  # forward block requires 2+ target groups, target_group_arn is correct for single TG
+  action {
+    type             = "forward"
+    order            = 2
+    target_group_arn = aws_lb_target_group.service.arn
   }
-}
-
-resource "aws_iam_role_policy" "flowlogs_write" {
-  name   = "${var.project}-${var.env}-vpc-flowlogs-write"
-  role   = aws_iam_role.flowlogs.id
-  policy = data.aws_iam_policy_document.flowlogs_write.json
-}
-
-resource "aws_flow_log" "this" {
-  log_destination_type = "cloud-watch-logs"
-  log_destination      = aws_cloudwatch_log_group.vpc_flow.arn
-  iam_role_arn         = aws_iam_role.flowlogs.arn
-  traffic_type         = "ALL"
-  vpc_id               = aws_vpc.this.id
-  tags                 = local.tags
 }
