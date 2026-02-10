@@ -12,4 +12,6 @@ variable "health_check_path" {
   default     = "/"
 }
 
-
+variable "entra_tenant_id"      { type = string }
+variable "entra_client_id"      { type = string }
+variable "oidc_session_timeout" { type = number; default = 28800 }
