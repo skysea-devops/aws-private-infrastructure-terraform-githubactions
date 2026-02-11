@@ -2,7 +2,11 @@ terraform {
   required_version = ">= 1.5.0"
 
   backend "s3" {
-    # ilk init sırasında -backend-config ile dolduracağız
+    bucket         = "test-bucket-terraform-state-v1"
+    key            = "terraform.tfstate"
+    region         = "eu-central-1"
+    encrypt        = true
+    dynamodb_table = "terraform-state-lock"  
   }
 
   required_providers {
