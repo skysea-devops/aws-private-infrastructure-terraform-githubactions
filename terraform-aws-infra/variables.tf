@@ -1,7 +1,3 @@
-############################################
-# Project & Environment
-############################################
-
 variable "project" {
   type        = string
   description = "Project name for resource naming and tagging"
@@ -12,9 +8,11 @@ variable "env" {
   description = "Environment (e.g., dev, staging, prod)"
 }
 
-############################################
-# VPC & Network Configuration
-############################################
+variable "aws_region" {
+  type        = string
+  description = "AWS region for resource deployment"
+  default     = "eu-central-1"
+}
 
 variable "vpc_cidr" {
   type        = string
@@ -34,10 +32,6 @@ variable "public_subnet_cidrs" {
   default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
-############################################
-# Application Configuration
-############################################
-
 variable "service_app_port" {
   type        = number
   description = "Application port for the service (e.g., n8n runs on 5678)"
@@ -50,10 +44,6 @@ variable "health_check_path" {
   default     = "/"
 }
 
-############################################
-# ALB & SSL Configuration
-############################################
-
 variable "host_header" {
   type        = string
   description = "Host header for routing (e.g., n8n.example.com). Required for OIDC listener rule."
@@ -65,10 +55,6 @@ variable "enable_http_redirect" {
   description = "Enable HTTP to HTTPS redirect (port 80 -> 443)"
   default     = true
 }
-
-############################################
-# OIDC / Entra ID Configuration
-############################################
 
 variable "entra_tenant_id" {
   type        = string
@@ -86,10 +72,6 @@ variable "oidc_session_timeout" {
   default     = 3600
 }
 
-############################################
-# ALB Access Logs (S3)
-############################################
-
 variable "alb_logs_bucket" {
   type        = string
   description = "S3 bucket name for ALB access logs"
@@ -100,10 +82,6 @@ variable "alb_logs_prefix" {
   description = "S3 prefix for ALB access logs"
   default     = "alb-logs"
 }
-
-############################################
-# VPC Flow Logs Configuration
-############################################
 
 variable "flow_logs_retention_days" {
   type        = number
