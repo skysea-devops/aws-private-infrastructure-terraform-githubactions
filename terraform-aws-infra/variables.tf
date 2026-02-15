@@ -40,8 +40,8 @@ variable "private_subnet_cidrs" {
 
 variable "service_app_port" {
   type        = number
-  description = "Application port for the service (e.g., app runs on port xxxx)"
-  default     = xxxx
+  description = "Application port for the service (e.g., app runs on port 3000)"
+  default     = 3000
 }
 
 variable "health_check_path" {

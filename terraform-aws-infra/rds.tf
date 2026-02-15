@@ -32,12 +32,12 @@ resource "aws_db_instance" "this" {
   engine_version = var.rds_engine_version
   instance_class = var.rds_instance_class
 
-  allocated_storage     = var.rds_allocated_storage
-  storage_type          = "gp3"
-  storage_encrypted     = true
+  allocated_storage       = var.rds_allocated_storage
+  storage_type            = "gp3"
+  storage_encrypted       = true
   backup_retention_period = var.rds_backup_retention_period
-  backup_window         = "03:00-04:00"
-  maintenance_window    = "mon:04:00-mon:05:00"
+  backup_window           = "03:00-04:00"
+  maintenance_window      = "mon:04:00-mon:05:00"
 
   db_name  = replace("${var.project}${var.env}", "-", "")
   username = var.rds_master_username

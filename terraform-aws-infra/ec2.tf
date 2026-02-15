@@ -98,12 +98,12 @@ resource "aws_instance" "service" {
   }
 
   user_data = base64encode(templatefile("${path.module}/user_data.sh", {
-    project              = var.project
-    env                  = var.env
-    aws_region           = var.aws_region
-    service_port         = var.service_app_port
-    rds_secret_name      = aws_secretsmanager_secret.rds_credentials.name
-    target_group_arn     = aws_lb_target_group.service.arn
+    project          = var.project
+    env              = var.env
+    aws_region       = var.aws_region
+    service_port     = var.service_app_port
+    rds_secret_name  = aws_secretsmanager_secret.rds_credentials.name
+    target_group_arn = aws_lb_target_group.service.arn
   }))
 
   user_data_replace_on_change = true
