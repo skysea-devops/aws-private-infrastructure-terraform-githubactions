@@ -16,10 +16,18 @@ jobs:
   destroy:
     name: Destroy Infrastructure
     runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: terraform-aws-infra
     
     permissions:
       contents: read
       id-token: write
+    
+    defaults:
+      run:
+        working-directory: terraform-aws-infra
     
     steps:
       - name: Validate confirmation
