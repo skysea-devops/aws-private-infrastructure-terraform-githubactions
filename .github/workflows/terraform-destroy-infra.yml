@@ -50,6 +50,7 @@ jobs:
           terraform_version: ${{ env.TF_VERSION }}
 
       - name: Terraform Init
+        working-directory: ./terraform-aws-infra
         run: |
           terraform init \
             -backend-config="bucket=${{ secrets.TF_STATE_BUCKET }}" \
@@ -59,6 +60,7 @@ jobs:
             -backend-config="encrypt=true"
 
       - name: Terraform Destroy
+        working-directory: ./terraform-aws-infra
         run: terraform destroy -auto-approve
         env:
           TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
