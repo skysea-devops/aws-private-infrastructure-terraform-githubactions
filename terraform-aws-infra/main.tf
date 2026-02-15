@@ -256,7 +256,6 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 resource "aws_cloudwatch_log_group" "vpc_flow" {
   name              = "/aws/vpc/${var.project}-${var.env}/flowlogs"
   retention_in_days = var.flow_logs_retention_days
-  kms_key_id        = var.kms_key_arn != "" ? var.kms_key_arn : null
   tags              = local.tags
 }
 

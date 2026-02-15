@@ -52,7 +52,7 @@ kms_key_arn              = "" # if blank KMS encryption not used
 
 rds_instance_class          = "db.t3.micro"
 rds_allocated_storage       = 20
-rds_engine_version          = "15.8"
+rds_engine_version          = "17.2"
 rds_backup_retention_period = 7
 rds_master_username         = "dbadmin"
 
@@ -67,4 +67,4 @@ ec2_ami_id        = "" # if blank uses latest Amazon Linux 2023
 # CERTIFICATE CONFIGURATION
 # ============================================================================
 
-certificate_arn = "" # if blank creates new ACM certificate
+certificate_arn = "arn:aws:acm:us-east-1:594515826734:certificate/4f53bb36-eea6-4c61-bd31-e79376187576" # if blank creates new ACM certificate
