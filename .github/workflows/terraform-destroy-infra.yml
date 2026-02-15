@@ -25,9 +25,7 @@ jobs:
       contents: read
       id-token: write
     
-    defaults:
-      run:
-        working-directory: terraform-aws-infra
+
     
     steps:
       - name: Validate confirmation
