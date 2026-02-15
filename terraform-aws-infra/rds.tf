@@ -1,6 +1,7 @@
 resource "random_password" "rds_master" {
   length  = 32
   special = true
+  override_special = "!#$%&*()-_=+[]{}<>:?"  # / @ " space excluded
 }
 
 resource "aws_secretsmanager_secret" "rds_credentials" {
