@@ -1,3 +1,7 @@
+# ============================================================================
+# AMI DATA SOURCE
+# ============================================================================
+
 data "aws_ami" "amazon_linux_2023" {
   most_recent = true
   owners      = ["amazon"]
@@ -12,6 +16,10 @@ data "aws_ami" "amazon_linux_2023" {
     values = ["hvm"]
   }
 }
+
+# ============================================================================
+# IAM ROLE FOR EC2 INSTANCE
+# ============================================================================
 
 data "aws_iam_policy_document" "ec2_assume" {
   statement {
@@ -30,6 +38,10 @@ resource "aws_iam_role" "ec2_service" {
   tags               = local.tags
 }
 
+# ============================================================================
+# IAM PERMISSIONS
+# ============================================================================
+
 data "aws_iam_policy_document" "ec2_permissions" {
   statement {
     sid    = "SecretsManagerRead"
@@ -40,7 +52,7 @@ data "aws_iam_policy_document" "ec2_permissions" {
     ]
     resources = [
       aws_secretsmanager_secret.rds_credentials.arn,
-      data.aws_secretsmanager_secret.oidc.arn
+      aws_secretsmanager_secret.oidc.arn
     ]
   }
 
@@ -55,6 +67,15 @@ data "aws_iam_policy_document" "ec2_permissions" {
     ]
     resources = ["arn:aws:logs:${var.aws_region}:*:log-group:/aws/ec2/${var.project}-${var.env}:*"]
   }
+
+  statement {
+    sid    = "EC2DescribeTags"
+    effect = "Allow"
+    actions = [
+      "ec2:DescribeTags"
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "ec2_permissions" {
@@ -68,11 +89,19 @@ resource "aws_iam_role_policy_attachment" "ec2_ssm" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
 }
 
+# ============================================================================
+# IAM INSTANCE PROFILE
+# ============================================================================
+
 resource "aws_iam_instance_profile" "ec2_service" {
   name = "${var.project}-${var.env}-ec2-service-profile"
   role = aws_iam_role.ec2_service.name
   tags = local.tags
 }
+
+# ============================================================================
+# EC2 INSTANCE
+# ============================================================================
 
 resource "aws_instance" "service" {
   ami                    = var.ec2_ami_id != "" ? var.ec2_ami_id : data.aws_ami.amazon_linux_2023.id

@@ -1,3 +1,7 @@
+# ============================================================================
+# PROJECT CONFIGURATION
+# ============================================================================
+
 variable "project" {
   type        = string
   description = "Project name for resource naming and tagging"
@@ -13,6 +17,10 @@ variable "aws_region" {
   description = "AWS region for resource deployment"
   default     = "eu-central-1"
 }
+
+# ============================================================================
+# NETWORK CONFIGURATION
+# ============================================================================
 
 variable "vpc_cidr" {
   type        = string
@@ -38,6 +46,10 @@ variable "private_subnet_cidrs" {
   default     = ["10.0.11.0/24", "10.0.12.0/24"]
 }
 
+# ============================================================================
+# APPLICATION CONFIGURATION
+# ============================================================================
+
 variable "service_app_port" {
   type        = number
   description = "Application port for the service (e.g., n8n runs on 5678)"
@@ -62,6 +74,10 @@ variable "enable_http_redirect" {
   default     = true
 }
 
+# ============================================================================
+# AZURE ENTRA ID (OIDC) CONFIGURATION
+# ============================================================================
+
 variable "entra_tenant_id" {
   type        = string
   description = "Azure Entra ID tenant ID for OIDC authentication"
@@ -72,11 +88,21 @@ variable "entra_client_id" {
   description = "Azure Entra ID application (client) ID"
 }
 
+variable "entra_client_secret" {
+  type        = string
+  description = "Azure Entra ID application client secret"
+  sensitive   = true
+}
+
 variable "oidc_session_timeout" {
   type        = number
   description = "OIDC session timeout in seconds (also used for ALB stickiness)"
   default     = 3600
 }
+
+# ============================================================================
+# LOGGING CONFIGURATION
+# ============================================================================
 
 variable "alb_logs_bucket" {
   type        = string
@@ -100,6 +126,10 @@ variable "kms_key_arn" {
   description = "KMS key ARN for encrypting CloudWatch Logs (VPC Flow Logs)"
   default     = ""
 }
+
+# ============================================================================
+# RDS CONFIGURATION
+# ============================================================================
 
 variable "rds_instance_class" {
   type        = string
@@ -131,6 +161,10 @@ variable "rds_master_username" {
   default     = "dbadmin"
 }
 
+# ============================================================================
+# EC2 CONFIGURATION
+# ============================================================================
+
 variable "ec2_instance_type" {
   type        = string
   description = "EC2 instance type"
@@ -143,8 +177,24 @@ variable "ec2_ami_id" {
   default     = ""
 }
 
+# ============================================================================
+# CERTIFICATE CONFIGURATION
+# ============================================================================
+
 variable "certificate_arn" {
   type        = string
   description = "Existing ACM certificate ARN (leave empty to create new)"
   default     = ""
+}
+
+variable "route53_zone_id" {
+  type        = string
+  description = "Route53 hosted zone ID (leave empty to skip DNS automation)"
+  default     = ""
+}
+
+variable "create_route53_records" {
+  type        = bool
+  description = "Auto-create Route53 records for ACM validation and ALB alias"
+  default     = false
 }

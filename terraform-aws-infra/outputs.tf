@@ -1,3 +1,7 @@
+# ============================================================================
+# VPC OUTPUTS
+# ============================================================================
+
 output "vpc_id" {
   description = "ID of the VPC"
   value       = aws_vpc.this.id
@@ -13,6 +17,20 @@ output "internet_gateway_id" {
   value       = aws_internet_gateway.this.id
 }
 
+output "nat_gateway_id" {
+  description = "NAT Gateway ID"
+  value       = aws_nat_gateway.this.id
+}
+
+output "availability_zones" {
+  description = "List of availability zones used"
+  value       = local.azs_effective
+}
+
+# ============================================================================
+# SUBNET OUTPUTS
+# ============================================================================
+
 output "public_subnet_ids" {
   description = "List of public subnet IDs"
   value       = [for s in aws_subnet.public : s.id]
@@ -23,10 +41,14 @@ output "public_subnet_cidrs" {
   value       = [for s in aws_subnet.public : s.cidr_block]
 }
 
-output "availability_zones" {
-  description = "List of availability zones used"
-  value       = local.azs_effective
+output "private_subnet_ids" {
+  description = "Private subnet IDs"
+  value       = [for s in aws_subnet.private : s.id]
 }
+
+# ============================================================================
+# SECURITY GROUP OUTPUTS
+# ============================================================================
 
 output "alb_security_group_id" {
   description = "Security Group ID for ALB"
@@ -42,6 +64,10 @@ output "rds_security_group_id" {
   description = "Security Group ID for RDS"
   value       = aws_security_group.rds.id
 }
+
+# ============================================================================
+# ALB OUTPUTS
+# ============================================================================
 
 output "alb_id" {
   description = "ID of the Application Load Balancer"
@@ -83,6 +109,10 @@ output "http_listener_arn" {
   value       = var.enable_http_redirect ? aws_lb_listener.http[0].arn : null
 }
 
+# ============================================================================
+# CERTIFICATE OUTPUTS
+# ============================================================================
+
 output "acm_certificate_arn" {
   description = "ARN of the ACM certificate"
   value       = local.certificate_arn
@@ -96,6 +126,35 @@ output "acm_certificate_status" {
 output "acm_certificate_domain" {
   description = "Domain name of the ACM certificate"
   value       = var.certificate_arn == "" ? aws_acm_certificate.service_cert[0].domain_name : var.host_header
+}
+
+# ============================================================================
+# OIDC OUTPUTS
+# ============================================================================
+
+output "oidc_issuer" {
+  description = "OIDC issuer URL for Entra ID"
+  value       = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
+}
+
+output "oidc_client_id" {
+  description = "OIDC client ID"
+  value       = var.entra_client_id
+  sensitive   = true
+}
+
+# ============================================================================
+# LOGGING OUTPUTS
+# ============================================================================
+
+output "alb_logs_bucket" {
+  description = "S3 bucket name for ALB access logs"
+  value       = var.alb_logs_bucket
+}
+
+output "alb_logs_prefix" {
+  description = "S3 prefix for ALB access logs"
+  value       = var.alb_logs_prefix
 }
 
 output "vpc_flow_log_id" {
@@ -123,36 +182,9 @@ output "vpc_flow_logs_role_name" {
   value       = aws_iam_role.flowlogs.name
 }
 
-output "alb_logs_bucket" {
-  description = "S3 bucket name for ALB access logs"
-  value       = var.alb_logs_bucket
-}
-
-output "alb_logs_prefix" {
-  description = "S3 prefix for ALB access logs"
-  value       = var.alb_logs_prefix
-}
-
-output "oidc_issuer" {
-  description = "OIDC issuer URL for Entra ID"
-  value       = "https://login.microsoftonline.com/${var.entra_tenant_id}/v2.0"
-}
-
-output "oidc_client_id" {
-  description = "OIDC client ID"
-  value       = var.entra_client_id
-  sensitive   = true
-}
-
-output "application_url" {
-  description = "Application URL"
-  value       = var.host_header != "" ? "https://${var.host_header}" : "https://${aws_lb.this.dns_name}"
-}
-
-output "service_port" {
-  description = "Application service port"
-  value       = var.service_app_port
-}
+# ============================================================================
+# RDS OUTPUTS
+# ============================================================================
 
 output "rds_endpoint" {
   description = "RDS endpoint"
@@ -168,6 +200,10 @@ output "rds_secret_arn" {
   description = "RDS credentials secret ARN"
   value       = aws_secretsmanager_secret.rds_credentials.arn
 }
+
+# ============================================================================
+# EC2 OUTPUTS
+# ============================================================================
 
 output "ec2_instance_id" {
   description = "EC2 instance ID"
@@ -189,12 +225,16 @@ output "ec2_iam_role_arn" {
   value       = aws_iam_role.ec2_service.arn
 }
 
-output "nat_gateway_id" {
-  description = "NAT Gateway ID"
-  value       = aws_nat_gateway.this.id
+# ============================================================================
+# APPLICATION OUTPUTS
+# ============================================================================
+
+output "application_url" {
+  description = "Application URL"
+  value       = var.host_header != "" ? "https://${var.host_header}" : "https://${aws_lb.this.dns_name}"
 }
 
-output "private_subnet_ids" {
-  description = "Private subnet IDs"
-  value       = [for s in aws_subnet.private : s.id]
+output "service_port" {
+  description = "Application service port"
+  value       = var.service_app_port
 }
