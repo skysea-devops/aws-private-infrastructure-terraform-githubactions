@@ -185,12 +185,15 @@ resource "aws_acm_certificate_validation" "service_cert" {
 # SECRETS MANAGER
 # ============================================================================
 
-data "aws_secretsmanager_secret" "oidc" {
-  name = "${var.project}/${var.env}/entra-oidc-client-secret"
+resource "aws_secretsmanager_secret" "oidc" {  # ← DATA yerine RESOURCE
+  name        = "${var.project}/${var.env}/entra-oidc-client-secret"
+  description = "Azure Entra ID OIDC client secret for ALB authentication"
+  tags        = local.tags
 }
 
-data "aws_secretsmanager_secret_version" "oidc" {
-  secret_id = data.aws_secretsmanager_secret.oidc.id
+resource "aws_secretsmanager_secret_version" "oidc" {
+  secret_id     = aws_secretsmanager_secret.oidc.id
+  secret_string = var.entra_client_secret
 }
 
 # ============================================================================

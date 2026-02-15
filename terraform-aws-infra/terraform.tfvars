@@ -29,7 +29,7 @@ enable_http_redirect = true
 
 entra_tenant_id      = "YOUR-TENANT-ID-HERE"     # Azure Portal → Azure Active Directory → Overview → Tenant ID
 entra_client_id      = "YOUR-CLIENT-ID-HERE"     # Azure Portal → App registrations → Your App → Application (client) ID
-entra_client_secret  = "YOUR-CLIENT-SECRET-HERE" # Azure Portal → App registrations → Your App → Certificates & secrets → Client secrets
+# entra_client_secret is provided via GitHub Secrets (TF_VAR_entra_client_secret)
 oidc_session_timeout = 3600
 
 # ============================================================================
