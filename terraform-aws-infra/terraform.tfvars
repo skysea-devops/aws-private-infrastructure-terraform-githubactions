@@ -60,8 +60,8 @@ rds_master_username         = "dbadmin"
 # EC2 CONFIGURATION
 # ============================================================================
 
-ec2_instance_type = "t3.small"
-ec2_ami_id        = "" # if blank uses latest Amazon Linux 2023
+ec2_instance_type = "t3a.small"
+ec2_ami_id        = "ubuntu-2404"  # if blank uses latest Amazon Linux 2023
 
 # ============================================================================
 # CERTIFICATE CONFIGURATION
