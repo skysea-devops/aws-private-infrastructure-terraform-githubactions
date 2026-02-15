@@ -174,7 +174,7 @@ variable "ec2_instance_type" {
 variable "ec2_ami_id" {
   type        = string
   description = "EC2 AMI ID (leave empty for latest Amazon Linux 2023)"
-  default     = ""
+  default     = "ami-0b6c6ebed2801a5cb"
 }
 
 # ============================================================================
