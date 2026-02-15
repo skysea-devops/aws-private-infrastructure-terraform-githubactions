@@ -81,7 +81,7 @@ jobs:
             -backend-config="region=${{ env.AWS_REGION }}" \
             -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}" \
             -backend-config="encrypt=true"
-        working-directory: ./terraform/infrastructure
+        working-directory: ./terraform-aws-infra
 
       # ========================================
       # FIX 3: Remove workspace (using single state)
@@ -99,7 +99,7 @@ jobs:
           terraform plan -destroy -no-color | head -300 >> $GITHUB_STEP_SUMMARY
           echo '```' >> $GITHUB_STEP_SUMMARY
           echo "</details>" >> $GITHUB_STEP_SUMMARY
-        working-directory: ./terraform/infrastructure
+        working-directory: ./terraform-aws-infra
         env:
           TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
         continue-on-error: false
@@ -185,7 +185,7 @@ jobs:
           echo "Starting infrastructure destruction..."
           terraform destroy -auto-approve
           echo "✅ Terraform destroy completed"
-        working-directory: ./terraform/infrastructure
+        working-directory: ./terraform-aws-infra
         env:
           TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
 
@@ -194,7 +194,7 @@ jobs:
       # ========================================
       - name: Verify State is Empty
         if: success()
-        working-directory: ./terraform/infrastructure
+        working-directory: ./terraform-aws-infra
         run: |
           echo "Verifying state is empty..."
           RESOURCES=$(terraform state list 2>/dev/null | wc -l)
