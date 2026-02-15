@@ -17,7 +17,9 @@ enable_http_redirect = true
 # Azure Entra ID (OIDC) Configuration
 entra_tenant_id      = "YOUR-TENANT-ID-HERE" # Azure Portal
 entra_client_id      = "YOUR-CLIENT-ID-HERE" # Azure Portal
+entra_client_secret  = "YOUR-CLIENT-SECRET-HERE" # Azure Portal → App registrations → Your App → Certificates & secrets → Client secrets
 oidc_session_timeout = 3600
+
 
 # S3 Configuration for ALB Logs
 alb_logs_bucket = "test-bucket-terraform-state-v1" # Backend Bucket name
