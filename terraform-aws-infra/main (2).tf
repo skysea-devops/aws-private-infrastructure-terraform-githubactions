@@ -141,7 +141,7 @@ resource "aws_lb_listener_rule" "oidc_forward" {
       token_endpoint             = "https://login.microsoftonline.com/${var.entra_tenant_id}/oauth2/v2.0/token"
       user_info_endpoint         = "https://graph.microsoft.com/oidc/userinfo"
       client_id                  = var.entra_client_id
-      client_secret              = data.aws_secretsmanager_secret_version.oidc.secret_string
+      client_secret              = aws_secretsmanager_secret_version.oidc.secret_string
       scope                      = "openid email profile"
       on_unauthenticated_request = "authenticate"
       session_cookie_name        = "AWSELBAuthSessionCookie"
