@@ -35,15 +35,16 @@ resource "aws_lb" "this" {
 
   enable_deletion_protection = false
 
-  access_logs {
-    bucket  = var.alb_logs_bucket
-    prefix  = var.alb_logs_prefix
-    enabled = true
+  dynamic "access_logs" {
+    for_each = var.alb_logs_bucket != "" ? [1] : []
+    content {
+      bucket  = var.alb_logs_bucket
+      prefix  = var.alb_logs_prefix
+      enabled = true
+    }
   }
 
   tags = merge(local.tags, { Name = "${var.project}-${var.env}-alb" })
-
-  depends_on = [aws_s3_bucket_policy.alb_logs]
 }
 
 # ============================================================================
@@ -177,7 +178,11 @@ resource "aws_acm_certificate_validation" "service_cert" {
   certificate_arn = aws_acm_certificate.service_cert[0].arn
 
   timeouts {
-    create = "45m"
+    create = "60m"  # Increased to 60 minutes - DNS propagation can take time
+  }
+
+  lifecycle {
+    create_before_destroy = true
   }
 }
 
@@ -185,7 +190,7 @@ resource "aws_acm_certificate_validation" "service_cert" {
 # SECRETS MANAGER
 # ============================================================================
 
-resource "aws_secretsmanager_secret" "oidc" {  # ← DATA yerine RESOURCE
+resource "aws_secretsmanager_secret" "oidc" {
   name        = "${var.project}/${var.env}/entra-oidc-client-secret"
   description = "Azure Entra ID OIDC client secret for ALB authentication"
   tags        = local.tags
@@ -200,14 +205,18 @@ resource "aws_secretsmanager_secret_version" "oidc" {
 # S3 BUCKET POLICY FOR ALB LOGS
 # ============================================================================
 
-data "aws_elb_service_account" "main" {}
+data "aws_elb_service_account" "main" {
+  count = var.alb_logs_bucket != "" ? 1 : 0
+}
 
 data "aws_s3_bucket" "alb_logs" {
+  count  = var.alb_logs_bucket != "" ? 1 : 0
   bucket = var.alb_logs_bucket
 }
 
 resource "aws_s3_bucket_policy" "alb_logs" {
-  bucket = data.aws_s3_bucket.alb_logs.id
+  count  = var.alb_logs_bucket != "" ? 1 : 0
+  bucket = data.aws_s3_bucket.alb_logs[0].id
 
   policy = jsonencode({
     Version = "2012-10-17"
@@ -215,16 +224,16 @@ resource "aws_s3_bucket_policy" "alb_logs" {
       {
         Sid       = "AllowALBLogDelivery"
         Effect    = "Allow"
-        Principal = { AWS = "arn:aws:iam::${data.aws_elb_service_account.main.id}:root" }
+        Principal = { AWS = "arn:aws:iam::${data.aws_elb_service_account.main[0].id}:root" }
         Action    = "s3:PutObject"
-        Resource  = "${data.aws_s3_bucket.alb_logs.arn}/${var.alb_logs_prefix}/AWSLogs/*"
+        Resource  = "${data.aws_s3_bucket.alb_logs[0].arn}/${var.alb_logs_prefix}/AWSLogs/*"
       },
       {
         Sid       = "AllowLogDeliveryService"
         Effect    = "Allow"
         Principal = { Service = "delivery.logs.amazonaws.com" }
         Action    = "s3:PutObject"
-        Resource  = "${data.aws_s3_bucket.alb_logs.arn}/${var.alb_logs_prefix}/AWSLogs/*"
+        Resource  = "${data.aws_s3_bucket.alb_logs[0].arn}/${var.alb_logs_prefix}/AWSLogs/*"
         Condition = {
           StringEquals = { "s3:x-amz-acl" = "bucket-owner-full-control" }
         }
@@ -234,7 +243,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
         Effect    = "Allow"
         Principal = { Service = "delivery.logs.amazonaws.com" }
         Action    = "s3:GetBucketAcl"
-        Resource  = data.aws_s3_bucket.alb_logs.arn
+        Resource  = data.aws_s3_bucket.alb_logs[0].arn
       }
     ]
   })
@@ -247,7 +256,7 @@ resource "aws_s3_bucket_policy" "alb_logs" {
 resource "aws_cloudwatch_log_group" "vpc_flow" {
   name              = "/aws/vpc/${var.project}-${var.env}/flowlogs"
   retention_in_days = var.flow_logs_retention_days
-  kms_key_id        = var.kms_key_arn
+  kms_key_id        = var.kms_key_arn != "" ? var.kms_key_arn : null
   tags              = local.tags
 }
 
