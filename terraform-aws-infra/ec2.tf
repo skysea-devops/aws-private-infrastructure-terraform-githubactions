@@ -140,5 +140,5 @@ resource "aws_instance" "service" {
 
   tags = merge(local.tags, { Name = "${var.project}-${var.env}-service" })
 
-  depends_on = [aws_nat_gateway.this, aws_db_instance.this]
+  depends_on = [aws_db_instance.this]
 }

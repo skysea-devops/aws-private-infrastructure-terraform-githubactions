@@ -17,11 +17,6 @@ output "internet_gateway_id" {
   value       = aws_internet_gateway.this.id
 }
 
-output "nat_gateway_id" {
-  description = "NAT Gateway ID"
-  value       = aws_nat_gateway.this.id
-}
-
 output "availability_zones" {
   description = "List of availability zones used"
   value       = local.azs_effective
