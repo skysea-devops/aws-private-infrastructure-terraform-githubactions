@@ -168,7 +168,7 @@ variable "rds_master_username" {
 variable "ec2_instance_type" {
   type        = string
   description = "EC2 instance type"
-  default     = "t3.small"
+  default     = "t3a.small"
 }
 
 variable "ec2_ami_id" {
