@@ -39,15 +39,39 @@ jobs:
     environment: ${{ github.event.inputs.environment }}
     
     steps:
+      # ============================================================
+      # Step 1: Setup and Checkout
+      # ============================================================
+      
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false  # Disable wrapper to get raw output
+
+      # ============================================================
+      # Step 2: AWS Authentication
+      # ============================================================
+      
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
+          role-session-name: GitHubActions-TerraformApply-${{ github.run_id }}
+
+      - name: Verify AWS identity and permissions
+        run: |
+          echo "::group::AWS Account Information"
+          aws sts get-caller-identity
+          
+          ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+          echo "Deploying to AWS Account: $ACCOUNT_ID"
+          echo "AWS Region: ${{ env.AWS_REGION }}"
+          echo "::endgroup::"
 
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
