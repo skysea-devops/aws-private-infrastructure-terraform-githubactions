@@ -26,3 +26,14 @@ alb_logs_prefix = "alb-logs"
 # VPC Flow Logs Configuration
 flow_logs_retention_days = 7
 kms_key_arn             = ""  # if blank KMS encryption not used
+
+# RDS Configuration
+rds_instance_class          = "db.t3.micro"
+rds_allocated_storage       = 20
+rds_engine_version          = "15.4"
+rds_backup_retention_period = 7
+rds_master_username         = "dbadmin"
+
+# EC2 Configuration
+ec2_instance_type = "t3.small"
+ec2_ami_id        = ""  # if blank uses latest Amazon Linux 2023

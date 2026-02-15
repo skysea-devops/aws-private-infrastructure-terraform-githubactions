@@ -153,3 +153,48 @@ output "service_port" {
   description = "Application service port"
   value       = var.service_app_port
 }
+
+output "rds_endpoint" {
+  description = "RDS endpoint"
+  value       = aws_db_instance.this.endpoint
+}
+
+output "rds_database_name" {
+  description = "RDS database name"
+  value       = aws_db_instance.this.db_name
+}
+
+output "rds_secret_arn" {
+  description = "RDS credentials secret ARN"
+  value       = aws_secretsmanager_secret.rds_credentials.arn
+}
+
+output "ec2_instance_id" {
+  description = "EC2 instance ID"
+  value       = aws_instance.service.id
+}
+
+output "ec2_public_ip" {
+  description = "EC2 public IP"
+  value       = aws_instance.service.public_ip
+}
+
+output "ec2_private_ip" {
+  description = "EC2 private IP"
+  value       = aws_instance.service.private_ip
+}
+
+output "ec2_iam_role_arn" {
+  description = "EC2 IAM role ARN"
+  value       = aws_iam_role.ec2_service.arn
+}
+
+output "nat_gateway_id" {
+  description = "NAT Gateway ID"
+  value       = aws_nat_gateway.this.id
+}
+
+output "private_subnet_ids" {
+  description = "Private subnet IDs"
+  value       = [for s in aws_subnet.private : s.id]
+}

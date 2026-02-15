@@ -32,10 +32,16 @@ variable "public_subnet_cidrs" {
   default     = ["10.0.1.0/24", "10.0.2.0/24"]
 }
 
+variable "private_subnet_cidrs" {
+  type        = list(string)
+  description = "CIDR blocks for private subnets"
+  default     = ["10.0.11.0/24", "10.0.12.0/24"]
+}
+
 variable "service_app_port" {
   type        = number
-  description = "Application port for the service (e.g., n8n runs on 5678)"
-  default     = 5678
+  description = "Application port for the service (e.g., app runs on port xxxx)"
+  default     = xxxx
 }
 
 variable "health_check_path" {
@@ -46,7 +52,7 @@ variable "health_check_path" {
 
 variable "host_header" {
   type        = string
-  description = "Host header for routing (e.g., n8n.example.com). Required for OIDC listener rule."
+  description = "Host header for routing (e.g., xxx.example.com). Required for OIDC listener rule."
   default     = ""
 }
 
@@ -92,5 +98,47 @@ variable "flow_logs_retention_days" {
 variable "kms_key_arn" {
   type        = string
   description = "KMS key ARN for encrypting CloudWatch Logs (VPC Flow Logs)"
+  default     = ""
+}
+
+variable "rds_instance_class" {
+  type        = string
+  description = "RDS instance class"
+  default     = "db.t3.micro"
+}
+
+variable "rds_allocated_storage" {
+  type        = number
+  description = "RDS allocated storage in GB"
+  default     = 20
+}
+
+variable "rds_engine_version" {
+  type        = string
+  description = "PostgreSQL engine version"
+  default     = "15.4"
+}
+
+variable "rds_backup_retention_period" {
+  type        = number
+  description = "RDS backup retention period in days"
+  default     = 7
+}
+
+variable "rds_master_username" {
+  type        = string
+  description = "RDS master username"
+  default     = "dbadmin"
+}
+
+variable "ec2_instance_type" {
+  type        = string
+  description = "EC2 instance type"
+  default     = "t3.small"
+}
+
+variable "ec2_ami_id" {
+  type        = string
+  description = "EC2 AMI ID (leave empty for latest Amazon Linux 2023)"
   default     = ""
 }
