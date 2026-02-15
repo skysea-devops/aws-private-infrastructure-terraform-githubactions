@@ -126,7 +126,7 @@ resource "aws_instance" "service" {
     delete_on_termination = true
   }
 
-  user_data = base64encode(templatefile("${path.module}/user_data.sh", {
+  user_data_base64  = base64encode(templatefile("${path.module}/user_data.sh", {
     project          = var.project
     env              = var.env
     aws_region       = var.aws_region

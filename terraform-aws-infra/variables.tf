@@ -15,7 +15,7 @@ variable "env" {
 variable "aws_region" {
   type        = string
   description = "AWS region for resource deployment"
-  default     = "eu-central-1"
+  default     = "us-east-1"
 }
 
 # ============================================================================
@@ -52,7 +52,7 @@ variable "private_subnet_cidrs" {
 
 variable "service_app_port" {
   type        = number
-  description = "Application port for the service (e.g., n8n runs on 5678)"
+  description = "Application port for the service (e.g., app runs on 5678)"
   default     = 5678
 }
 
