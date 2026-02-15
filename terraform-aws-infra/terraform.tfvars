@@ -36,7 +36,7 @@ oidc_session_timeout = 3600
 # S3 CONFIGURATION FOR ALB LOGS
 # ============================================================================
 
-alb_logs_bucket = "test-bucket-terraform-state-v1" # Backend Bucket name
+alb_logs_bucket = "" # Leave empty to disable ALB access logs
 alb_logs_prefix = "alb-logs"
 
 # ============================================================================
@@ -52,7 +52,7 @@ kms_key_arn              = "" # if blank KMS encryption not used
 
 rds_instance_class          = "db.t3.micro"
 rds_allocated_storage       = 20
-rds_engine_version          = "15.4"
+rds_engine_version          = "15.8"
 rds_backup_retention_period = 7
 rds_master_username         = "dbadmin"
 

@@ -121,7 +121,6 @@ jobs:
         run: |
           echo "Creating execution plan..."
           terraform plan -no-color -input=false \
-            -var="kms_key_arn=${{ secrets.KMS_KEY_ARN }}" \
             -var="certificate_arn=${{ secrets.CERTIFICATE_ARN }}" \
             -out=tfplan
         env:

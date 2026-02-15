@@ -146,7 +146,7 @@ variable "rds_allocated_storage" {
 variable "rds_engine_version" {
   type        = string
   description = "PostgreSQL engine version"
-  default     = "15.4"
+  default     = "15.8"
 }
 
 variable "rds_backup_retention_period" {
