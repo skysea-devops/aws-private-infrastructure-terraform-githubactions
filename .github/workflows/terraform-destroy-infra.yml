@@ -4,62 +4,35 @@ on:
   workflow_dispatch:
     inputs:
       confirmation:
-        description: 'Type "destroy" to confirm infrastructure deletion'
+        description: 'Type "destroy" to confirm'
         required: true
         type: string
-      environment:
-        description: 'Environment to destroy'
-        required: true
-        type: choice
-        options:
-          - dev
-          - prod
 
 env:
   AWS_REGION: us-east-1
   TF_VERSION: 1.5.0
 
 jobs:
-  validate-confirmation:
-    name: Validate Destroy Confirmation
+  destroy:
+    name: Destroy Infrastructure
     runs-on: ubuntu-latest
-    steps:
-      - name: Check confirmation input
-        run: |
-          if [ "${{ github.event.inputs.confirmation }}" != "destroy" ]; then
-            echo "❌ Confirmation failed. You must type 'destroy' to proceed."
-            exit 1
-          fi
-          echo "✓ Confirmation validated"
-      
-      - name: Add warning to summary
-        run: |
-          echo "### ⚠️ DESTROY CONFIRMATION VALIDATED" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Environment:** ${{ github.event.inputs.environment }}" >> $GITHUB_STEP_SUMMARY
-          echo "**Triggered by:** @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ **ALL INFRASTRUCTURE WILL BE PERMANENTLY DELETED**" >> $GITHUB_STEP_SUMMARY
-
-  terraform-destroy:
-    name: Destroy Terraform Infrastructure
-    runs-on: ubuntu-latest
-    needs: validate-confirmation
-    environment: ${{ github.event.inputs.environment }}
     
     permissions:
       contents: read
-      id-token: write  # Required for OIDC
-      issues: write    # Required for manual approval
+      id-token: write
     
     steps:
-      - name: Checkout code
+      - name: Validate confirmation
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "destroy" ]; then
+            echo "❌ You must type 'destroy' to proceed"
+            exit 1
+          fi
+
+      - name: Checkout
         uses: actions/checkout@v4
 
-      # ========================================
-      # FIX 1: Use OIDC instead of access keys
-      # ========================================
-      - name: Configure AWS credentials (OIDC)
+      - name: Configure AWS
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
@@ -70,9 +43,6 @@ jobs:
         with:
           terraform_version: ${{ env.TF_VERSION }}
 
-      # ========================================
-      # FIX 2: Add backend configuration
-      # ========================================
       - name: Terraform Init
         run: |
           terraform init \
@@ -81,206 +51,19 @@ jobs:
             -backend-config="region=${{ env.AWS_REGION }}" \
             -backend-config="dynamodb_table=${{ secrets.TF_LOCK_TABLE }}" \
             -backend-config="encrypt=true"
-        working-directory: ./terraform-aws-infra
-
-      # ========================================
-      # FIX 3: Remove workspace (using single state)
-      # ========================================
-      # Workspace not needed if using separate repos/directories for environments
-
-      - name: Show resources to be destroyed
-        id: plan
-        run: |
-          echo "### 📋 Resources to be DESTROYED" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "<details><summary>Click to view destroy plan</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```terraform' >> $GITHUB_STEP_SUMMARY
-          terraform plan -destroy -no-color | head -300 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
-        working-directory: ./terraform-aws-infra
-        env:
-          TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
-        continue-on-error: false
-
-      # ========================================
-      # FIX 4: Improved manual approval
-      # ========================================
-      - name: Wait for manual approval
-        uses: trstringer/manual-approval@v1
-        with:
-          secret: ${{ github.TOKEN }}
-          approvers: ${{ github.actor }}
-          minimum-approvals: 1
-          issue-title: "🚨 Approve Terraform Destroy for ${{ github.event.inputs.environment }}"
-          issue-body: |
-            ## ⚠️ CRITICAL: Infrastructure Destruction Approval Required
-            
-            **Environment:** `${{ github.event.inputs.environment }}`
-            **Triggered by:** @${{ github.actor }}
-            **Workflow:** [${{ github.run_id }}](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})
-            
-            ---
-            
-            ### Resources to be DESTROYED:
-            
-            - ✅ VPC and all network components (subnets, IGW, route tables)
-            - ✅ RDS PostgreSQL database (**final snapshot will be created**)
-            - ✅ EC2 instances and data
-            - ✅ Application Load Balancer
-            - ✅ Security Groups
-            - ✅ Secrets in Secrets Manager (30-day recovery window)
-            - ✅ CloudWatch Log Groups
-            - ✅ VPC Flow Logs
-            - ✅ Target Groups
-            
-            ### ⚠️ WARNING:
-            
-            - This action is **IRREVERSIBLE** (except RDS snapshot)
-            - All application data will be **PERMANENTLY DELETED**
-            - DNS records will need manual cleanup
-            - Azure Entra ID app will remain (manual cleanup)
-            
-            ### 📊 Post-Destroy Checklist:
-            
-            1. Verify RDS final snapshot created
-            2. Delete Secrets Manager secrets (after 30-day window)
-            3. Remove DNS records (CNAME to ALB)
-            4. Delete Azure Entra ID app (optional)
-            5. Check AWS Console for orphaned resources
-            
-            ---
-            
-            **Review the Terraform plan in the [workflow logs](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}) before approving.**
-            
-            To approve, comment on this issue with: `/approve`
-
-      # ========================================
-      # FIX 5: Add pre-destroy checks
-      # ========================================
-      - name: Pre-destroy verification
-        id: verify
-        run: |
-          echo "=== Pre-Destroy Checks ==="
-          
-          # Check if RDS has recent backups
-          echo "Checking RDS backup status..."
-          aws rds describe-db-instances \
-            --query 'DBInstances[?contains(DBInstanceIdentifier, `${{ github.event.inputs.environment }}`)].{ID:DBInstanceIdentifier,Backup:LatestRestorableTime}' \
-            --output table
-          
-          # Check for running EC2 instances
-          echo "Checking EC2 instances..."
-          aws ec2 describe-instances \
-            --filters "Name=tag:Env,Values=${{ github.event.inputs.environment }}" "Name=instance-state-name,Values=running" \
-            --query 'Reservations[*].Instances[*].[InstanceId,State.Name,Tags[?Key==`Name`].Value|[0]]' \
-            --output table
-          
-          echo "✓ Pre-destroy checks complete"
 
       - name: Terraform Destroy
-        id: destroy
-        run: |
-          echo "Starting infrastructure destruction..."
-          terraform destroy -auto-approve
-          echo "✅ Terraform destroy completed"
-        working-directory: ./terraform-aws-infra
+        run: terraform destroy -auto-approve
         env:
           TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
 
-      # ========================================
-      # FIX 6: Verify state is empty
-      # ========================================
-      - name: Verify State is Empty
+      - name: Verify
         if: success()
-        working-directory: ./terraform-aws-infra
         run: |
-          echo "Verifying state is empty..."
           RESOURCES=$(terraform state list 2>/dev/null | wc -l)
-          
           if [ "$RESOURCES" -eq "0" ]; then
-            echo "✅ State is empty - all resources destroyed"
-            echo "### ✅ Destroy Successful" >> $GITHUB_STEP_SUMMARY
-            echo "All resources removed from state" >> $GITHUB_STEP_SUMMARY
+            echo "✅ All resources destroyed"
           else
-            echo "⚠️  Warning: State still has $RESOURCES resources"
-            echo "### ⚠️ Partial Destroy" >> $GITHUB_STEP_SUMMARY
-            echo "Resources remaining: $RESOURCES" >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
-            terraform state list >> $GITHUB_STEP_SUMMARY
-            echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+            echo "⚠️ $RESOURCES resources remain"
+            terraform state list
           fi
-
-      # ========================================
-      # FIX 7: Check for orphaned resources
-      # ========================================
-      - name: Check for Orphaned Resources
-        if: always()
-        continue-on-error: true
-        run: |
-          echo "Checking for orphaned AWS resources..."
-          
-          ENV="${{ github.event.inputs.environment }}"
-          
-          # Check VPCs
-          VPCS=$(aws ec2 describe-vpcs \
-            --filters "Name=tag:Env,Values=$ENV" \
-            --query 'Vpcs[*].VpcId' \
-            --output text 2>/dev/null || echo "")
-          
-          # Check RDS instances  
-          RDS=$(aws rds describe-db-instances \
-            --query "DBInstances[?contains(DBInstanceIdentifier, '$ENV')].DBInstanceIdentifier" \
-            --output text 2>/dev/null || echo "")
-          
-          # Check EC2 instances
-          EC2=$(aws ec2 describe-instances \
-            --filters "Name=tag:Env,Values=$ENV" "Name=instance-state-name,Values=running,stopped" \
-            --query 'Reservations[*].Instances[*].InstanceId' \
-            --output text 2>/dev/null || echo "")
-          
-          # Check Load Balancers
-          ALBS=$(aws elbv2 describe-load-balancers \
-            --query "LoadBalancers[?contains(LoadBalancerName, '$ENV')].LoadBalancerArn" \
-            --output text 2>/dev/null || echo "")
-          
-          if [ -n "$VPCS" ] || [ -n "$RDS" ] || [ -n "$EC2" ] || [ -n "$ALBS" ]; then
-            echo "### ⚠️ Orphaned Resources Found" >> $GITHUB_STEP_SUMMARY
-            [ -n "$VPCS" ] && echo "- VPCs: $VPCS" >> $GITHUB_STEP_SUMMARY
-            [ -n "$RDS" ] && echo "- RDS: $RDS" >> $GITHUB_STEP_SUMMARY
-            [ -n "$EC2" ] && echo "- EC2: $EC2" >> $GITHUB_STEP_SUMMARY
-            [ -n "$ALBS" ] && echo "- ALBs: $ALBS" >> $GITHUB_STEP_SUMMARY
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "⚠️ Manual cleanup may be required" >> $GITHUB_STEP_SUMMARY
-          else
-            echo "✅ No orphaned resources detected" >> $GITHUB_STEP_SUMMARY
-          fi
-
-      - name: Post-destroy cleanup reminder
-        if: success()
-        run: |
-          echo "### ✅ Infrastructure Destroyed Successfully" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### 📋 Manual Cleanup Checklist:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Verify RDS final snapshot exists" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Delete Secrets Manager secrets (after 30-day recovery)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Remove DNS records (CNAME to ALB)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Delete ACM certificate validation records" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Delete Azure Entra ID app registration (optional)" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Check CloudWatch for remaining log groups" >> $GITHUB_STEP_SUMMARY
-          echo "- [ ] Verify no orphaned resources in AWS Console" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "#### 💰 Cost Impact:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Monthly savings: ~\$53 (EC2, RDS, ALB stopped)" >> $GITHUB_STEP_SUMMARY
-
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "### ❌ Destroy Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Check workflow logs for details" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "⚠️ **Some resources may still exist and incur costs**" >> $GITHUB_STEP_SUMMARY
