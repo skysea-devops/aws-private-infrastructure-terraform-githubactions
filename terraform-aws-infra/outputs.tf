@@ -85,17 +85,17 @@ output "http_listener_arn" {
 
 output "acm_certificate_arn" {
   description = "ARN of the ACM certificate"
-  value       = aws_acm_certificate.service_cert.arn
+  value       = local.certificate_arn
 }
 
 output "acm_certificate_status" {
   description = "Status of the ACM certificate"
-  value       = aws_acm_certificate.service_cert.status
+  value       = var.certificate_arn == "" ? aws_acm_certificate.service_cert[0].status : "external"
 }
 
 output "acm_certificate_domain" {
   description = "Domain name of the ACM certificate"
-  value       = aws_acm_certificate.service_cert.domain_name
+  value       = var.certificate_arn == "" ? aws_acm_certificate.service_cert[0].domain_name : var.host_header
 }
 
 output "vpc_flow_log_id" {

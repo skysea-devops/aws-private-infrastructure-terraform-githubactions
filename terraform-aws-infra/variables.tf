@@ -40,8 +40,8 @@ variable "private_subnet_cidrs" {
 
 variable "service_app_port" {
   type        = number
-  description = "Application port for the service (e.g., app runs on port 3000)"
-  default     = 3000
+  description = "Application port for the service (e.g., n8n runs on 5678)"
+  default     = 5678
 }
 
 variable "health_check_path" {
@@ -52,7 +52,7 @@ variable "health_check_path" {
 
 variable "host_header" {
   type        = string
-  description = "Host header for routing (e.g., xxx.example.com). Required for OIDC listener rule."
+  description = "Host header for routing (e.g., n8n.example.com). Required for OIDC listener rule."
   default     = ""
 }
 
@@ -140,5 +140,11 @@ variable "ec2_instance_type" {
 variable "ec2_ami_id" {
   type        = string
   description = "EC2 AMI ID (leave empty for latest Amazon Linux 2023)"
+  default     = ""
+}
+
+variable "certificate_arn" {
+  type        = string
+  description = "Existing ACM certificate ARN (leave empty to create new)"
   default     = ""
 }

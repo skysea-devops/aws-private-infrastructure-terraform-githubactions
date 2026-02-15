@@ -1,4 +1,12 @@
+# ============================================================================
+# DATA SOURCES
+# ============================================================================
+
 data "aws_availability_zones" "available" {}
+
+# ============================================================================
+# LOCALS
+# ============================================================================
 
 locals {
   azs_effective = length(var.azs) > 0 ? var.azs : slice(data.aws_availability_zones.available.names, 0, 2)
@@ -9,6 +17,14 @@ locals {
     ManagedBy = "terraform"
   }
 }
+
+locals {
+  certificate_arn = var.certificate_arn != "" ? var.certificate_arn : aws_acm_certificate.service_cert[0].arn
+}
+
+# ============================================================================
+# APPLICATION LOAD BALANCER
+# ============================================================================
 
 resource "aws_lb" "this" {
   name               = "${var.project}-${var.env}-alb"
@@ -29,6 +45,10 @@ resource "aws_lb" "this" {
 
   depends_on = [aws_s3_bucket_policy.alb_logs]
 }
+
+# ============================================================================
+# TARGET GROUP
+# ============================================================================
 
 resource "aws_lb_target_group" "service" {
   name        = "${var.project}-${var.env}-service-tg"
@@ -59,6 +79,10 @@ resource "aws_lb_target_group" "service" {
   tags = merge(local.tags, { Name = "${var.project}-${var.env}-service-tg" })
 }
 
+# ============================================================================
+# ALB LISTENERS
+# ============================================================================
+
 resource "aws_lb_listener" "http" {
   count             = var.enable_http_redirect ? 1 : 0
   load_balancer_arn = aws_lb.this.arn
@@ -80,7 +104,7 @@ resource "aws_lb_listener" "https" {
   port              = 443
   protocol          = "HTTPS"
   ssl_policy        = "ELBSecurityPolicy-TLS13-1-2-2021-06"
-  certificate_arn   = aws_acm_certificate_validation.service_cert.certificate_arn
+  certificate_arn   = local.certificate_arn
 
   default_action {
     type = "fixed-response"
@@ -91,6 +115,10 @@ resource "aws_lb_listener" "https" {
     }
   }
 }
+
+# ============================================================================
+# OIDC AUTHENTICATION
+# ============================================================================
 
 resource "aws_lb_listener_rule" "oidc_forward" {
   count        = var.host_header != "" ? 1 : 0
@@ -128,7 +156,12 @@ resource "aws_lb_listener_rule" "oidc_forward" {
   }
 }
 
+# ============================================================================
+# ACM CERTIFICATE
+# ============================================================================
+
 resource "aws_acm_certificate" "service_cert" {
+  count             = var.certificate_arn == "" ? 1 : 0
   domain_name       = var.host_header
   validation_method = "DNS"
 
@@ -140,12 +173,17 @@ resource "aws_acm_certificate" "service_cert" {
 }
 
 resource "aws_acm_certificate_validation" "service_cert" {
-  certificate_arn = aws_acm_certificate.service_cert.arn
+  count           = var.certificate_arn == "" ? 1 : 0
+  certificate_arn = aws_acm_certificate.service_cert[0].arn
 
   timeouts {
     create = "45m"
   }
 }
+
+# ============================================================================
+# SECRETS MANAGER
+# ============================================================================
 
 data "aws_secretsmanager_secret" "oidc" {
   name = "${var.project}/${var.env}/entra-oidc-client-secret"
@@ -154,6 +192,10 @@ data "aws_secretsmanager_secret" "oidc" {
 data "aws_secretsmanager_secret_version" "oidc" {
   secret_id = data.aws_secretsmanager_secret.oidc.id
 }
+
+# ============================================================================
+# S3 BUCKET POLICY FOR ALB LOGS
+# ============================================================================
 
 data "aws_elb_service_account" "main" {}
 
@@ -194,6 +236,10 @@ resource "aws_s3_bucket_policy" "alb_logs" {
     ]
   })
 }
+
+# ============================================================================
+# VPC FLOW LOGS
+# ============================================================================
 
 resource "aws_cloudwatch_log_group" "vpc_flow" {
   name              = "/aws/vpc/${var.project}-${var.env}/flowlogs"

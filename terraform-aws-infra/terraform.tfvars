@@ -37,3 +37,6 @@ rds_master_username         = "dbadmin"
 # EC2 Configuration
 ec2_instance_type = "t3.small"
 ec2_ami_id        = "" # if blank uses latest Amazon Linux 2023
+
+# Certificate Configuration
+certificate_arn = "arn:aws:acm:us-east-1:594515826734:certificate/4f53bb36-eea6-4c61-bd31-e79376187576" # if blank creates new ACM certificate
