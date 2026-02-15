@@ -19,8 +19,8 @@ jobs:
 
     defaults:
       run:
-        working-directory: terraform-aws-infra
-    
+        working-directory: ./terraform-aws-infra
+
     permissions:
       contents: read
       id-token: write
