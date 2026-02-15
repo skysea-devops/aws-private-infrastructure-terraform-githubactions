@@ -1,3 +1,6 @@
+# ============================================================================
+# VPC
+# ============================================================================
 
 resource "aws_vpc" "this" {
   cidr_block           = var.vpc_cidr
@@ -6,10 +9,18 @@ resource "aws_vpc" "this" {
   tags                 = merge(local.tags, { Name = "${var.project}-${var.env}-vpc" })
 }
 
+# ============================================================================
+# INTERNET GATEWAY
+# ============================================================================
+
 resource "aws_internet_gateway" "this" {
   vpc_id = aws_vpc.this.id
   tags   = merge(local.tags, { Name = "${var.project}-${var.env}-igw" })
 }
+
+# ============================================================================
+# SUBNETS
+# ============================================================================
 
 resource "aws_subnet" "public" {
   for_each = { for idx, az in local.azs_effective : idx => az }
@@ -38,6 +49,10 @@ resource "aws_subnet" "private" {
   })
 }
 
+# ============================================================================
+# PUBLIC ROUTE TABLE
+# ============================================================================
+
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
   tags   = merge(local.tags, { Name = "${var.project}-${var.env}-public-rt" })
@@ -55,26 +70,21 @@ resource "aws_route_table_association" "public" {
   route_table_id = aws_route_table.public.id
 }
 
-resource "aws_eip" "nat" {
-  domain = "vpc"
-  tags   = merge(local.tags, { Name = "${var.project}-${var.env}-nat-eip" })
-}
+# ============================================================================
+# PRIVATE ROUTE TABLE (NO NAT GATEWAY)
+# ============================================================================
 
-resource "aws_nat_gateway" "this" {
-  allocation_id = aws_eip.nat.id
-  subnet_id     = aws_subnet.public["0"].id
-  tags          = merge(local.tags, { Name = "${var.project}-${var.env}-nat" })
-}
+# NAT Gateway removed (cost optimization - not required per Phase 2)
+# EC2 in public subnet has internet via IGW
+# RDS in private subnet doesn't need internet access
 
 resource "aws_route_table" "private" {
   vpc_id = aws_vpc.this.id
-  tags   = merge(local.tags, { Name = "${var.project}-${var.env}-private-rt" })
-}
-
-resource "aws_route" "private_nat" {
-  route_table_id         = aws_route_table.private.id
-  destination_cidr_block = "0.0.0.0/0"
-  nat_gateway_id         = aws_nat_gateway.this.id
+  
+  # No internet route - private subnets are isolated
+  # RDS doesn't need internet access
+  
+  tags = merge(local.tags, { Name = "${var.project}-${var.env}-private-rt" })
 }
 
 resource "aws_route_table_association" "private" {
@@ -83,6 +93,10 @@ resource "aws_route_table_association" "private" {
   route_table_id = aws_route_table.private.id
 }
 
+# ============================================================================
+# SECURITY GROUP - ALB
+# ============================================================================
+
 resource "aws_security_group" "alb" {
   name        = "${var.project}-${var.env}-alb-sg"
   description = "ALB SG"
@@ -90,6 +104,7 @@ resource "aws_security_group" "alb" {
   tags        = merge(local.tags, { Name = "${var.project}-${var.env}-alb-sg" })
 }
 
+# Ingress Rules
 resource "aws_vpc_security_group_ingress_rule" "alb_443_in" {
   security_group_id = aws_security_group.alb.id
   description       = "HTTPS from internet"
@@ -109,6 +124,7 @@ resource "aws_vpc_security_group_ingress_rule" "alb_80_in" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
+# Egress Rules
 resource "aws_vpc_security_group_egress_rule" "alb_to_service" {
   security_group_id            = aws_security_group.alb.id
   description                  = "To service SG on app port"
@@ -127,6 +143,10 @@ resource "aws_vpc_security_group_egress_rule" "alb_to_azure_oidc" {
   cidr_ipv4         = "0.0.0.0/0"
 }
 
+# ============================================================================
+# SECURITY GROUP - EC2 SERVICE
+# ============================================================================
+
 resource "aws_security_group" "service" {
   name        = "${var.project}-${var.env}-service-sg"
   description = "service app SG (only from ALB, no SSH)"
@@ -134,6 +154,7 @@ resource "aws_security_group" "service" {
   tags        = merge(local.tags, { Name = "${var.project}-${var.env}-service-sg" })
 }
 
+# Ingress Rules
 resource "aws_vpc_security_group_ingress_rule" "service_from_alb" {
   security_group_id            = aws_security_group.service.id
   description                  = "App port from ALB only"
@@ -143,12 +164,17 @@ resource "aws_vpc_security_group_ingress_rule" "service_from_alb" {
   referenced_security_group_id = aws_security_group.alb.id
 }
 
+# Egress Rules
 resource "aws_vpc_security_group_egress_rule" "service_all_out" {
   security_group_id = aws_security_group.service.id
   description       = "service outbound"
   ip_protocol       = "-1"
   cidr_ipv4         = "0.0.0.0/0"
 }
+
+# ============================================================================
+# SECURITY GROUP - RDS
+# ============================================================================
 
 resource "aws_security_group" "rds" {
   name        = "${var.project}-${var.env}-rds-sg"
@@ -157,6 +183,7 @@ resource "aws_security_group" "rds" {
   tags        = merge(local.tags, { Name = "${var.project}-${var.env}-rds-sg" })
 }
 
+# Ingress Rules
 resource "aws_vpc_security_group_ingress_rule" "rds_from_service" {
   security_group_id            = aws_security_group.rds.id
   description                  = "Postgres from service SG only"
@@ -166,6 +193,7 @@ resource "aws_vpc_security_group_ingress_rule" "rds_from_service" {
   referenced_security_group_id = aws_security_group.service.id
 }
 
+# Egress Rules
 resource "aws_vpc_security_group_egress_rule" "rds_all_out" {
   security_group_id = aws_security_group.rds.id
   description       = "RDS outbound"
