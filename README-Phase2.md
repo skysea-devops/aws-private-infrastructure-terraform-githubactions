@@ -85,8 +85,8 @@ From Phase 1 (Bootstrap)
 ```bash
 # Bootstrap sonrası
 AWS_ROLE_ARN         = arn:aws:iam::ACCOUNT_ID:role/GitHubActionsRole
-TF_STATE_BUCKET      = n8n-selfhosted-terraform-state-v1
-TF_LOCK_TABLE        = n8n-dev-terraform-locks
+TF_STATE_BUCKET      = test-bucket-terraform-state-v1
+TF_LOCK_TABLE        = service-dev-terraform-locks
 KMS_KEY_ARN          = arn:aws:kms:us-east-1:ACCOUNT_ID:key/xxx
 
 # Manuelly

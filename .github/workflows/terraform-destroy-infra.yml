@@ -1,0 +1,111 @@
+name: Terraform Destroy Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirmation:
+        description: 'Type "destroy" to confirm infrastructure deletion'
+        required: true
+        type: string
+      environment:
+        description: 'Environment to destroy'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
+
+env:
+  AWS_REGION: us-east-1
+  TF_VERSION: 1.5.0
+
+jobs:
+  validate-confirmation:
+    name: Validate Destroy Confirmation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check confirmation input
+        run: |
+          if [ "${{ github.event.inputs.confirmation }}" != "destroy" ]; then
+            echo " Confirmation failed. You must type 'destroy' to proceed."
+            exit 1
+          fi
+          echo "✓ Confirmation validated"
+
+  terraform-destroy:
+    name: Destroy Terraform Infrastructure
+    runs-on: ubuntu-latest
+    needs: validate-confirmation
+    environment: ${{ github.event.inputs.environment }}
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+
+      - name: Terraform Init
+        run: terraform init
+        working-directory: ./terraform/infrastructure
+
+      - name: Terraform Workspace Select
+        run: terraform workspace select ${{ github.event.inputs.environment }} || terraform workspace new ${{ github.event.inputs.environment }}
+        working-directory: ./terraform/infrastructure
+
+      - name: Show resources to be destroyed
+        run: |
+          echo "  The following resources will be DESTROYED:"
+          terraform plan -destroy -no-color
+        working-directory: ./terraform/infrastructure
+
+      - name: Wait for manual approval
+        uses: trstringer/manual-approval@v1
+        with:
+          secret: ${{ github.TOKEN }}
+          approvers: ${{ github.actor }}
+          minimum-approvals: 1
+          issue-title: "Approve Terraform Destroy for ${{ github.event.inputs.environment }}"
+          issue-body: |
+            **WARNING: This will permanently delete all infrastructure in ${{ github.event.inputs.environment }}**
+            
+            Resources to be destroyed:
+            - VPC and all network components
+            - RDS PostgreSQL database (final snapshot will be created)
+            - EC2 instances
+            - Application Load Balancer
+            - Security Groups
+            - Secrets in Secrets Manager
+            
+            Please review the Terraform plan output above before approving.
+            
+            Triggered by: @${{ github.actor }}
+            Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+      - name: Terraform Destroy
+        run: terraform destroy -auto-approve
+        working-directory: ./terraform/infrastructure
+        env:
+          TF_VAR_entra_tenant_id: ${{ secrets.ENTRA_TENANT_ID }}
+          TF_VAR_entra_client_id: ${{ secrets.ENTRA_CLIENT_ID }}
+          TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
+
+      - name: Post-destroy cleanup reminder
+        run: |
+          echo "✓ Infrastructure destroyed successfully"
+          echo ""
+          echo "  Manual cleanup required:"
+          echo "1. Delete Secrets Manager secrets (30-day recovery window)"
+          echo "2. Delete S3 logs if no longer needed"
+          echo "3. Remove DNS records"
+          echo "4. Delete Azure Entra ID app registration (optional)"
+          echo "5. Check for any orphaned resources in AWS Console"

@@ -12,7 +12,7 @@ on:
     branches:
       - main
       - dev
-      - test-phase2
+      - test-phase-4-5
     paths:
       - 'terraform-aws-infra/**'
       - '.github/workflows/terraform-plan.yml'
@@ -119,44 +119,21 @@ jobs:
       - name: Terraform Plan
         id: plan
         run: |
-          echo "Creating Terraform execution plan..."
-          
-          # Run plan and capture output
+          echo "Creating execution plan..."
           terraform plan -no-color -input=false \
             -var="kms_key_arn=${{ secrets.KMS_KEY_ARN }}" \
             -var="certificate_arn=${{ secrets.CERTIFICATE_ARN }}" \
-            -out=tfplan 2>&1 | tee plan_output.txt
-          
-          # Check plan status
-          PLAN_EXIT_CODE=${PIPESTATUS[0]}
-          
-          if [ $PLAN_EXIT_CODE -eq 0 ]; then
-            echo "✅ Plan created successfully"
-          else
-            echo "::error::Plan failed with exit code $PLAN_EXIT_CODE"
-            exit $PLAN_EXIT_CODE
-          fi
+            -out=tfplan
+        env:
+          TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
         continue-on-error: true
-
-      - name: Generate plan summary
-        id: summary
+      
+      - name: Display Plan Summary
         if: steps.plan.outcome == 'success'
         run: |
-          echo "### 📋 Terraform Plan Summary" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Extract resource changes
-          PLAN_SUMMARY=$(terraform show -no-color tfplan | grep -E "Plan:|No changes")
-          echo "$PLAN_SUMMARY" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Add detailed plan (truncated for readability)
-          echo "<details><summary>Click to view detailed plan</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```terraform' >> $GITHUB_STEP_SUMMARY
-          terraform show -no-color tfplan | head -200 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
+          echo "::group::Plan Summary"
+          terraform show -no-color tfplan | grep -E "Plan:|No changes" || echo "Changes detected"
+          echo "::endgroup::"
 
       # ============================================================
       # Step 7: Security and Compliance Checks
@@ -172,91 +149,12 @@ jobs:
             echo "::warning::Potential sensitive data detected in plan output"
             echo "Review the plan to ensure no secrets are exposed"
           else
-            echo "✅ No obvious sensitive data detected"
+            echo "No obvious sensitive data detected"
           fi
 
-      # ============================================================
-      # Step 8: Post Plan to PR Comment
-      # ============================================================
-      
-      - name: Post plan to Pull Request
-        uses: actions/github-script@v7
-        if: github.event_name == 'pull_request'
-        env:
-          PLAN_OUTPUT: ${{ steps.plan.outputs.stdout }}
-        with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            const planOutput = fs.readFileSync('terraform-aws-infra/plan_output.txt', 'utf8');
-            
-            // Truncate plan if too long (GitHub comment limit is 65536 chars)
-            const maxLength = 60000;
-            const truncatedPlan = planOutput.length > maxLength 
-              ? planOutput.substring(0, maxLength) + '\n\n... (output truncated)'
-              : planOutput;
-            
-            // Determine plan status emoji
-            const fmtStatus = '${{ steps.fmt.outcome }}' === 'success' ? '✅' : '⚠️';
-            const initStatus = '${{ steps.init.outcome }}' === 'success' ? '✅' : '❌';
-            const validateStatus = '${{ steps.validate.outcome }}' === 'success' ? '✅' : '❌';
-            const planStatus = '${{ steps.plan.outcome }}' === 'success' ? '✅' : '❌';
-            
-            const output = `## Terraform Plan Results
-            
-            | Check | Status |
-            |-------|--------|
-            | **Format** | ${fmtStatus} \`${{ steps.fmt.outcome }}\` |
-            | **Initialization** | ${initStatus} \`${{ steps.init.outcome }}\` |
-            | **Validation** | ${validateStatus} \`${{ steps.validate.outcome }}\` |
-            | **Plan** | ${planStatus} \`${{ steps.plan.outcome }}\` |
-            
-            <details><summary><b>📋 Show Plan Output</b></summary>
-            
-            \`\`\`terraform
-            ${truncatedPlan}
-            \`\`\`
-            
-            </details>
-            
-            ---
-            
-            **Workflow:** \`${{ github.workflow }}\` | **Event:** \`${{ github.event_name }}\`
-            **Triggered by:** @${{ github.actor }} | **Commit:** \`${{ github.sha }}\`
-            
-            ${planStatus === '✅' ? '✅ **Plan successful!** Review the changes above and merge when ready.' : '❌ **Plan failed!** Check the logs for details.'}
-            `;
-
-            // Post or update comment
-            const { data: comments } = await github.rest.issues.listComments({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number: context.issue.number,
-            });
-            
-            const botComment = comments.find(comment => 
-              comment.user.type === 'Bot' && 
-              comment.body.includes('Terraform Plan Results')
-            );
-            
-            if (botComment) {
-              await github.rest.issues.updateComment({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                comment_id: botComment.id,
-                body: output
-              });
-            } else {
-              await github.rest.issues.createComment({
-                issue_number: context.issue.number,
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: output
-              });
-            }
 
       # ============================================================
-      # Step 9: Upload Plan Artifact
+      # Step 8: Upload Plan Artifact
       # ============================================================
       
       - name: Upload plan artifact
@@ -270,7 +168,7 @@ jobs:
           retention-days: 5
 
       # ============================================================
-      # Step 10: Final Status Check
+      # Step 9: Final Status Check
       # ============================================================
       
       - name: Terraform plan status
@@ -282,6 +180,6 @@ jobs:
       - name: Success notification
         if: success()
         run: |
-          echo "✅ All checks passed!"
+          echo " All checks passed!"
           echo "The infrastructure changes have been validated successfully."
           echo "Review the plan output above and merge the PR when ready."

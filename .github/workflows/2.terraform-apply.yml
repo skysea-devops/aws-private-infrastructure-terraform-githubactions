@@ -16,6 +16,7 @@ on:
   push:
     branches:
       - main
+      - dev
     paths:
       - 'terraform-aws-infra/**'
       - '.github/workflows/terraform-apply.yml'
@@ -55,23 +56,9 @@ jobs:
 
     steps:
       # ============================================================
-      # Step 1: Pre-deployment Checks
+      # Step 1: Setup and Checkout
       # ============================================================
       
-      - name: Deployment metadata
-        run: |
-          echo "### 🚀 Deployment Information" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "| Field | Value |" >> $GITHUB_STEP_SUMMARY
-          echo "|-------|-------|" >> $GITHUB_STEP_SUMMARY
-          echo "| **Triggered by** | ${{ github.actor }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Event** | ${{ github.event_name }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Commit** | \`${{ github.sha }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Branch** | \`${{ github.ref_name }}\` |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Workflow** | ${{ github.workflow }} |" >> $GITHUB_STEP_SUMMARY
-          echo "| **Run ID** | ${{ github.run_id }} |" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-
       - name: Checkout code
         uses: actions/checkout@v4
 
@@ -120,28 +107,13 @@ jobs:
           
           echo "✅ Terraform initialized with remote state backend"
 
-      # ============================================================
-      # Step 4: Pre-Apply Validation
-      # ============================================================
-      
-      - name: Terraform Validate
-        run: |
-          echo "Validating Terraform configuration..."
-          terraform validate -no-color
-          echo "✅ Configuration is valid"
-
-      - name: Check for existing state lock
-        run: |
-          echo "Checking for existing state locks..."
-          # If there's a stuck lock, you may need to manually unlock it
-          # terraform force-unlock <LOCK_ID>
-          echo "✅ No state locks detected"
+    
 
       # ============================================================
-      # Step 5: Generate Fresh Plan
+      # Step 5: Generate Plan
       # ============================================================
       
-      - name: Terraform Plan (pre-apply)
+      - name: Terraform Plan
         id: plan
         run: |
           echo "Creating execution plan for apply..."
@@ -149,54 +121,21 @@ jobs:
             -var="kms_key_arn=${{ secrets.KMS_KEY_ARN }}" \
             -var="certificate_arn=${{ secrets.CERTIFICATE_ARN }}" \
             -out=tfplan
-          
-          echo "Plan created successfully"
-          
-          # Display plan summary
-          echo "::group::Plan Summary"
-          terraform show -no-color tfplan | grep -E "Plan:|No changes" || true
-          echo "::endgroup::"
-
-      - name: Save plan to summary
-        if: steps.plan.outcome == 'success'
-        run: |
-          echo "### 📋 Execution Plan" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "<details><summary>View Plan Details</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```terraform' >> $GITHUB_STEP_SUMMARY
-          terraform show -no-color tfplan | head -200 >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+        env:
+          TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
 
       # ============================================================
-      # Step 6: Apply Infrastructure Changes
+      # Step 6: Apply Infrastructure 
       # ============================================================
       
       - name: Terraform Apply
         id: apply
         run: |
-          echo "🚀 Applying infrastructure changes..."
-          
-          # Apply the plan
-          if [ "${{ github.event.inputs.auto_approve }}" = "true" ]; then
-            echo "Auto-approve enabled - applying without confirmation"
-            terraform apply -auto-approve -input=false tfplan
-          else
-            # GitHub Environment approval gate handles manual approval
-            terraform apply -input=false tfplan
-          fi
-          
-          echo "✅ Infrastructure changes applied successfully"
-
-      - name: Apply status
-        if: steps.apply.outcome == 'success'
-        run: |
-          echo "### ✅ Deployment Successful" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "Infrastructure has been updated successfully!" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Applying infrastructure changes..."
+          terraform apply -auto-approve -input=false tfplan
+          echo "✅ Infrastructure applied successfully"
+        env:
+          TF_VAR_entra_client_secret: ${{ secrets.ENTRA_CLIENT_SECRET }}
 
       # ============================================================
       # Step 7: Capture and Store Outputs
@@ -204,135 +143,17 @@ jobs:
       
       - name: Terraform Output
         id: output
-        if: steps.apply.outcome == 'success'
         run: |
-          echo "Capturing Terraform outputs..."
-          terraform output -json > terraform-outputs.json
-          
-          echo "::group::Infrastructure Outputs"
-          terraform output
-          echo "::endgroup::"
-
-      - name: Display key outputs in summary
-        if: steps.apply.outcome == 'success'
-        run: |
-          echo "### 📤 Infrastructure Outputs" >> $GITHUB_STEP_SUMMARY
+          echo "## Terraform Outputs" >> $GITHUB_STEP_SUMMARY
           echo "" >> $GITHUB_STEP_SUMMARY
+          terraform output -no-color >> $GITHUB_STEP_SUMMARY
           
-          # Extract key outputs
-          if command -v jq &> /dev/null; then
-            echo "| Output | Value |" >> $GITHUB_STEP_SUMMARY
-            echo "|--------|-------|" >> $GITHUB_STEP_SUMMARY
-            
-            # ALB DNS Name
-            if ALB_DNS=$(jq -r '.alb_dns_name.value // empty' terraform-outputs.json); then
-              [ -n "$ALB_DNS" ] && echo "| **ALB DNS Name** | \`$ALB_DNS\` |" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            # VPC ID
-            if VPC_ID=$(jq -r '.vpc_id.value // empty' terraform-outputs.json); then
-              [ -n "$VPC_ID" ] && echo "| **VPC ID** | \`$VPC_ID\` |" >> $GITHUB_STEP_SUMMARY
-            fi
-            
-            # Target Group ARN
-            if TG_ARN=$(jq -r '.service_target_group_arn.value // empty' terraform-outputs.json); then
-              [ -n "$TG_ARN" ] && echo "| **Target Group ARN** | \`${TG_ARN:0:50}...\` |" >> $GITHUB_STEP_SUMMARY
-            fi
-          fi
-          
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "<details><summary>View all outputs (JSON)</summary>" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo '```json' >> $GITHUB_STEP_SUMMARY
-          cat terraform-outputs.json >> $GITHUB_STEP_SUMMARY
-          echo '```' >> $GITHUB_STEP_SUMMARY
-          echo "</details>" >> $GITHUB_STEP_SUMMARY
-
-      - name: Upload outputs artifact
-        if: steps.apply.outcome == 'success'
+          # Save outputs as JSON for artifact
+          terraform output -json > outputs.json
+      
+      - name: Upload Terraform Outputs
         uses: actions/upload-artifact@v4
         with:
-          name: terraform-outputs-${{ github.run_id }}
-          path: terraform-aws-infra/terraform-outputs.json
-          retention-days: 90
-
-      # ============================================================
-      # Step 8: Post-Deployment Actions
-      # ============================================================
-      
-      - name: Update DNS instructions
-        if: steps.apply.outcome == 'success'
-        run: |
-          echo "### 🌐 Next Steps: DNS Configuration" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          
-          # Get ALB DNS name
-          if command -v jq &> /dev/null; then
-            ALB_DNS=$(jq -r '.alb_dns_name.value // empty' terraform-outputs.json)
-            if [ -n "$ALB_DNS" ]; then
-              echo "Create a CNAME record in your DNS provider:" >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-              echo '```dns' >> $GITHUB_STEP_SUMMARY
-              echo "Type:  CNAME" >> $GITHUB_STEP_SUMMARY
-              echo "Name:  service (or your subdomain)" >> $GITHUB_STEP_SUMMARY
-              echo "Value: $ALB_DNS" >> $GITHUB_STEP_SUMMARY
-              echo "TTL:   300" >> $GITHUB_STEP_SUMMARY
-              echo '```' >> $GITHUB_STEP_SUMMARY
-              echo "" >> $GITHUB_STEP_SUMMARY
-            fi
-          fi
-
-      - name: Verify infrastructure health
-        if: steps.apply.outcome == 'success'
-        run: |
-          echo "Running post-deployment health checks..."
-          
-          # Check if VPC exists
-          VPC_ID=$(terraform output -raw vpc_id 2>/dev/null || echo "")
-          if [ -n "$VPC_ID" ]; then
-            echo "✅ VPC verified: $VPC_ID"
-            aws ec2 describe-vpcs --vpc-ids "$VPC_ID" --region ${{ env.AWS_REGION }} > /dev/null
-          fi
-          
-          # Check if ALB exists
-          ALB_ARN=$(terraform output -raw alb_arn 2>/dev/null || echo "")
-          if [ -n "$ALB_ARN" ]; then
-            echo "✅ ALB verified"
-            aws elbv2 describe-load-balancers --load-balancer-arns "$ALB_ARN" --region ${{ env.AWS_REGION }} > /dev/null
-          fi
-          
-          echo "✅ Basic health checks passed"
-
-      # ============================================================
-      # Step 9: Error Handling and Notifications
-      # ============================================================
-      
-      - name: Handle apply failure
-        if: failure()
-        run: |
-          echo "::error::Terraform apply failed!"
-          echo "## ❌ Deployment Failed" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "The infrastructure deployment encountered an error." >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Troubleshooting Steps:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "1. **Check the logs above** for specific error messages" >> $GITHUB_STEP_SUMMARY
-          echo "2. **Verify AWS permissions** - ensure the role has required permissions" >> $GITHUB_STEP_SUMMARY
-          echo "3. **Check for resource conflicts** - resources may already exist" >> $GITHUB_STEP_SUMMARY
-          echo "4. **Review state file** - state may be out of sync" >> $GITHUB_STEP_SUMMARY
-          echo "5. **Check quotas** - AWS service limits may be reached" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "### Recovery Options:" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "- Revert the last commit and re-run the workflow" >> $GITHUB_STEP_SUMMARY
-          echo "- Fix the issue locally and create a new PR" >> $GITHUB_STEP_SUMMARY
-          echo "- Check state lock: \`terraform force-unlock <LOCK_ID>\` (use with caution)" >> $GITHUB_STEP_SUMMARY
-
-      - name: Deployment summary
-        if: always()
-        run: |
-          echo "---" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          echo "**Deployment completed at:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")" >> $GITHUB_STEP_SUMMARY
-          echo "**Duration:** Approx. $(( $(date +%s) - ${{ github.event.head_commit.timestamp || 0 }} )) seconds" >> $GITHUB_STEP_SUMMARY
+          name: terraform-outputs-${{ github.ref_name }}-${{ github.run_number }}
+          path: terraform-aws-infra/outputs.json
+          retention-days: 30
