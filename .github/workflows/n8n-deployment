@@ -2,10 +2,7 @@ name: Deploy n8n via SSM (docker compose)
 
 on:
   workflow_dispatch::
-    branches: [ "dev" ]
-    paths:
-      - "docker/**"
-      - ".github/workflows/deploy-n8n-ssm.yml"
+    
 
 permissions:
   id-token: write
