@@ -14,7 +14,6 @@ on:
       - ".github/workflows/deploy-n8n.yml"
   workflow_dispatch:
 
-
 permissions:
   id-token: write
   contents: read
