@@ -12,7 +12,7 @@ on:
     paths:
       - "docker/**"
       - ".github/workflows/deploy-n8n.yml"
-  
+  workflow_dispatch:
 
 
 permissions:
