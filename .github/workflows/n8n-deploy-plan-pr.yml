@@ -1,0 +1,85 @@
+name: n8n PR Canary Test (Port 5679)
+
+on:
+  pull_request:
+    branches: [ "dev", "main","phase-network-data" ]
+    paths:
+      - "docker/**"
+      - ".github/workflows/n8n-deploy-plan-pr.yml"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Build .env (local)
+        run: |
+          cat > /tmp/n8n.env << 'EOF'
+          N8N_HOST=${{ secrets.N8N_HOST }}
+          N8N_ENCRYPTION_KEY=${{ secrets.N8N_ENCRYPTION_KEY }}
+          GENERIC_TIMEZONE=Europe/Istanbul
+
+          DB_POSTGRESDB_HOST=${{ secrets.DB_POSTGRESDB_HOST }}
+          DB_POSTGRESDB_PORT=${{ secrets.DB_POSTGRESDB_PORT }}
+          DB_POSTGRESDB_DATABASE=${{ secrets.DB_POSTGRESDB_DATABASE }}
+          DB_POSTGRESDB_USER=${{ secrets.DB_POSTGRESDB_USER }}
+          DB_POSTGRESDB_PASSWORD=${{ secrets.DB_POSTGRESDB_PASSWORD }}
+          DB_POSTGRESDB_SSL=true
+          EOF
+
+      - name: Base64 encode files for safe transfer
+        run: |
+          base64 -w0 docker-canary-deployment/docker-compose.yml > /tmp/compose.b64
+          base64 -w0 /tmp/n8n.env > /tmp/env.b64
+
+      - name: Deploy on EC2 using SSM Run Command
+        id: ssm
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy n8n via docker compose" \
+            --parameters commands="[
+              \"set -e\",
+              \"sudo mkdir -p /opt/n8n\",
+              \"sudo chown -R ubuntu:ubuntu /opt/n8n || true\",
+              \"echo $(cat /tmp/compose.b64) | base64 -d > /opt/n8n/docker-compose.pr.yml\",
+              \"echo $(cat /tmp/env.b64) | base64 -d > /opt/n8n/.env\",
+              \"cd /opt/n8n\",
+              \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env config >/dev/null\",
+              \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env pull\",
+              \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env up -d --force-recreate\",
+              \"for i in \$(seq 1 30); do curl -fsS http://127.0.0.1:5679/ >/dev/null && break || true; sleep 2; done\",
+              \"curl -fsS http://127.0.0.1:5679/ >/dev/null || (sudo docker logs pr-n8n --tail 100 && exit 1)\",
+              \"echo 'Health check passed'\",
+              \"sudo docker logs pr-n8n --tail 50\",
+              \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml down -v\"
+            ]" \
+            --query "Command.CommandId" --output text)
+
+          echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
+          echo "SSM CommandId: $COMMAND_ID"
+
+      - name: Wait & show command output
+        run: |
+          aws ssm get-command-invocation \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --output text

@@ -1,0 +1,49 @@
+version: "3.8"
+
+services:
+  n8n:
+    image: n8nio/n8n:next
+    container_name: n8n
+    restart: unless-stopped
+
+    ports:
+      - "5678:5678"
+
+    environment:
+      # --- Core ---
+      NODE_ENV: "production"
+      N8N_PORT: "5678"
+      N8N_HOST: "${N8N_HOST}"
+      N8N_PROTOCOL: "${N8N_PROTOCOL:-https}"
+
+      # External URL (important for editor + webhooks behind ALB)
+      WEBHOOK_URL: "${WEBHOOK_URL}"
+      N8N_EDITOR_BASE_URL: "${N8N_EDITOR_BASE_URL}"
+
+      # Encryption key (MUST be stable; do not change after prod)
+      N8N_ENCRYPTION_KEY: "${N8N_ENCRYPTION_KEY}"
+
+      # If ALB terminates TLS and forwards to instance via HTTP
+      N8N_PROXY_HOPS: "1"
+
+      # --- Database (RDS Postgres) ---
+      DB_TYPE: "postgresdb"
+      DB_POSTGRESDB_HOST: "${DB_POSTGRESDB_HOST}"
+      DB_POSTGRESDB_PORT: "${DB_POSTGRESDB_PORT:-5432}"
+      DB_POSTGRESDB_DATABASE: "${DB_POSTGRESDB_DATABASE}"
+      DB_POSTGRESDB_USER: "${DB_POSTGRESDB_USER}"
+      DB_POSTGRESDB_PASSWORD: "${DB_POSTGRESDB_PASSWORD}"
+
+      # RDS SSL (recommended)
+      DB_POSTGRESDB_SSL: "${DB_POSTGRESDB_SSL:-true}"
+
+      # Optional basic auth for UI (enable if you want extra protection)
+      # N8N_BASIC_AUTH_ACTIVE: "true"
+      # N8N_BASIC_AUTH_USER: "${N8N_BASIC_AUTH_USER}"
+      # N8N_BASIC_AUTH_PASSWORD: "${N8N_BASIC_AUTH_PASSWORD}"
+
+    volumes:
+      - n8n_data:/home/node/.n8n
+
+volumes:
+  n8n_data:
