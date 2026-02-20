@@ -1,7 +1,7 @@
 name: Deploy n8n via SSM (docker compose)
 
 on:
-  workflow_dispatch::
+  workflow_dispatch:
     
 
 permissions:
