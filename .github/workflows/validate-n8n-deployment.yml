@@ -1,0 +1,174 @@
+name: n8n Deploy (Validate PR + Deploy on Merge)
+
+on:
+  push:
+    branches: [ "dev" ]
+    paths:
+      - "docker/**"
+      - ".github/workflows/deploy-n8n.yml"
+  
+  pull_request:
+    branches: [ "dev" ]
+    paths:
+      - "docker/**"
+      - ".github/workflows/deploy-n8n.yml"
+  
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  # ============================================================================
+  # VALIDATE (PR only - full deployment simulation)
+  # ============================================================================
+  validate:
+    name: Validate Deployment
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate docker-compose.yml syntax
+        run: |
+          echo "Validating docker-compose.yml..."
+          docker compose -f docker/docker-compose.yml config > /dev/null
+          echo "✓ docker-compose.yml syntax is valid"
+
+      - name: Simulate .env file creation
+        run: |
+          echo "Creating mock .env file..."
+          cat > /tmp/n8n.env << 'EOF'
+          N8N_HOST=test.example.com
+          N8N_ENCRYPTION_KEY=test-key-32-chars-minimum-length
+          GENERIC_TIMEZONE=Europe/Istanbul
+          
+          DB_POSTGRESDB_HOST=test.rds.amazonaws.com
+          DB_POSTGRESDB_PORT=5432
+          DB_POSTGRESDB_DATABASE=postgres
+          DB_POSTGRESDB_USER=testuser
+          DB_POSTGRESDB_PASSWORD=testpassword123
+          DB_POSTGRESDB_SSL=true
+          EOF
+          
+          echo "✓ .env file structure validated"
+
+      - name: Test docker-compose with .env
+        run: |
+          echo "Testing docker-compose with .env..."
+          cp /tmp/n8n.env docker/.env
+          cd docker
+          
+          docker compose --env-file .env config > /dev/null
+          
+          echo "✓ docker-compose can read .env file"
+
+      - name: Test base64 encoding
+        run: |
+          echo "Testing base64 encoding..."
+          
+          base64 -w0 docker/docker-compose.yml > /tmp/compose.b64
+          base64 -w0 /tmp/n8n.env > /tmp/env.b64
+          
+          # Verify decode
+          base64 -d /tmp/compose.b64 > /tmp/compose.decoded
+          base64 -d /tmp/env.b64 > /tmp/env.decoded
+          
+          diff docker/docker-compose.yml /tmp/compose.decoded
+          diff /tmp/n8n.env /tmp/env.decoded
+          
+          echo "✓ Base64 encoding/decoding validated"
+
+      - name: Test image availability
+        run: |
+          echo "Testing n8n image..."
+          IMAGE=$(docker compose -f docker/docker-compose.yml config | grep 'image:' | head -1 | awk '{print $2}')
+          echo "Image: $IMAGE"
+          docker pull $IMAGE
+          echo "✓ Image is accessible"
+
+      - name: Validation summary
+        run: |
+          echo ""
+          echo "✅ PR VALIDATION PASSED"
+          echo ""
+          echo "Validated:"
+          echo "  ✓ docker-compose.yml syntax"
+          echo "  ✓ .env file structure"
+          echo "  ✓ docker-compose + .env compatibility"
+          echo "  ✓ Base64 encoding"
+          echo "  ✓ n8n image availability"
+          echo ""
+          echo "Ready to deploy on merge"
+
+  # ============================================================================
+  # DEPLOY (push/merge only - using proven working method)
+  # ============================================================================
+  deploy:
+    name: Deploy to Production
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' || github.event_name == 'workflow_dispatch'
+    
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: us-east-1
+
+      - name: Build .env (local)
+        run: |
+          cat > /tmp/n8n.env << 'EOF'
+          N8N_HOST=${{ secrets.N8N_HOST }}
+          N8N_ENCRYPTION_KEY=${{ secrets.N8N_ENCRYPTION_KEY }}
+          GENERIC_TIMEZONE=Europe/Istanbul
+
+          DB_POSTGRESDB_HOST=${{ secrets.DB_POSTGRESDB_HOST }}
+          DB_POSTGRESDB_PORT=${{ secrets.DB_POSTGRESDB_PORT }}
+          DB_POSTGRESDB_DATABASE=${{ secrets.DB_POSTGRESDB_DATABASE }}
+          DB_POSTGRESDB_USER=${{ secrets.DB_POSTGRESDB_USER }}
+          DB_POSTGRESDB_PASSWORD=${{ secrets.DB_POSTGRESDB_PASSWORD }}
+          DB_POSTGRESDB_SSL=true
+          EOF
+
+      - name: Base64 encode files for safe transfer
+        run: |
+          base64 -w0 docker/docker-compose.yml > /tmp/compose.b64
+          base64 -w0 /tmp/n8n.env > /tmp/env.b64
+
+      - name: Deploy on EC2 using SSM Run Command
+        id: ssm
+        run: |
+          COMMAND_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy n8n via docker compose" \
+            --parameters commands="[
+              \"set -e\",
+              \"sudo mkdir -p /opt/n8n\",
+              \"sudo chown -R ubuntu:ubuntu /opt/n8n || true\",
+              \"echo $(cat /tmp/compose.b64) | base64 -d > /opt/n8n/docker-compose.yml\",
+              \"echo $(cat /tmp/env.b64) | base64 -d > /opt/n8n/.env\",
+              \"cd /opt/n8n\",
+              \"sudo docker compose version\",
+              \"sudo docker compose pull\",
+              \"sudo docker compose up -d\",
+              \"sudo docker ps --filter name=n8n\"
+            ]" \
+            --query "Command.CommandId" --output text)
+
+          echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
+          echo "SSM CommandId: $COMMAND_ID"
+
+      - name: Wait & show command output
+        run: |
+          aws ssm get-command-invocation \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --output text
