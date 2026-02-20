@@ -5,7 +5,7 @@ resource "random_password" "rds_master" {
 }
 
 resource "aws_secretsmanager_secret" "rds_credentials" {
-  name = "${var.project}/${var.env}/rds-credentials"
+  name = "${var.project}/${var.env}/rds-credentials2"
   tags = local.tags
 }
 
