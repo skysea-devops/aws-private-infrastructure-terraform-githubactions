@@ -39,7 +39,7 @@ jobs:
 
       - name: Base64 encode files for safe transfer
         run: |
-          base64 -w0 deploy/n8n/docker-compose.yml > /tmp/compose.b64
+          base64 -w0 deploy/docker-compose.yml > /tmp/compose.b64
           base64 -w0 /tmp/n8n.env > /tmp/env.b64
 
       - name: Deploy on EC2 using SSM Run Command
@@ -56,10 +56,10 @@ jobs:
               \"echo $(cat /tmp/compose.b64) | base64 -d > /opt/n8n/docker-compose.yml\",
               \"echo $(cat /tmp/env.b64) | base64 -d > /opt/n8n/.env\",
               \"cd /opt/n8n\",
-              \"docker compose version\",
-              \"docker compose pull\",
-              \"docker compose up -d\",
-              \"docker ps --filter name=n8n\"
+              \"sudo docker compose version\",
+              \"sudo docker compose pull\",
+              \"sudo docker compose up -d\",
+              \"sudo docker ps --filter name=n8n\"
             ]" \
             --query "Command.CommandId" --output text)
 
