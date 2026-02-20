@@ -8,7 +8,7 @@ on:
       - ".github/workflows/deploy-n8n.yml"
   
   pull_request:
-    branches: [ "dev" ]
+    branches: [ "dev", "pr-validate-deployment" ]
     paths:
       - "docker/**"
       - ".github/workflows/deploy-n8n.yml"
