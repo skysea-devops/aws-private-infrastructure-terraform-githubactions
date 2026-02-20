@@ -142,3 +142,4 @@ resource "aws_instance" "service" {
 
   depends_on = [aws_db_instance.this]
 }
+
