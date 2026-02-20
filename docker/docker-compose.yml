@@ -20,9 +20,6 @@ services:
       WEBHOOK_URL: "${WEBHOOK_URL}"
       N8N_EDITOR_BASE_URL: "${N8N_EDITOR_BASE_URL}"
 
-      # Timezone
-      GENERIC_TIMEZONE: "${GENERIC_TIMEZONE:-Europe/Istanbul}"
-      TZ: "${TZ:-Europe/Istanbul}"
 
       # Encryption key (MUST be stable; do not change after prod)
       N8N_ENCRYPTION_KEY: "${N8N_ENCRYPTION_KEY}"
