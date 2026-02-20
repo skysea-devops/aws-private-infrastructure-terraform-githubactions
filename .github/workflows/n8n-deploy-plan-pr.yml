@@ -48,8 +48,8 @@ jobs:
 
       - name: Encode files
         run: |
-          base64 -w0 docker/docker-compose.yml > /tmp/compose.b64
-          base64 -w0 docker/docker-compose.pr.yml > /tmp/compose_pr.b64
+          base64 -w0 docker-canary-deployment/docker-compose.yml > /tmp/compose.b64
+          base64 -w0 docker-canary-deployment/docker-compose.pr.yml > /tmp/compose_pr.b64
           base64 -w0 /tmp/n8n.env > /tmp/env.b64
 
       - name: Run PR canary test
