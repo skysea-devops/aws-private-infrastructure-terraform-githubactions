@@ -21,11 +21,104 @@ permissions:
 
 jobs:
   # ============================================================================
+  # CHECK SECRETS (PR only - verify secrets exist)
+  # ============================================================================
+  check-secrets:
+    name: Check Required Secrets
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    
+    steps:
+      - name: Verify required secrets are set
+        env:
+          # Try to access secrets - they'll be empty strings if not set
+          AWS_ROLE_ARN: ${{ secrets.AWS_ROLE_ARN }}
+          EC2_INSTANCE_ID: ${{ secrets.EC2_INSTANCE_ID }}
+          N8N_HOST: ${{ secrets.N8N_HOST }}
+          N8N_ENCRYPTION_KEY: ${{ secrets.N8N_ENCRYPTION_KEY }}
+          DB_POSTGRESDB_HOST: ${{ secrets.DB_POSTGRESDB_HOST }}
+          DB_POSTGRESDB_PORT: ${{ secrets.DB_POSTGRESDB_PORT }}
+          DB_POSTGRESDB_DATABASE: ${{ secrets.DB_POSTGRESDB_DATABASE }}
+          DB_POSTGRESDB_USER: ${{ secrets.DB_POSTGRESDB_USER }}
+          DB_POSTGRESDB_PASSWORD: ${{ secrets.DB_POSTGRESDB_PASSWORD }}
+        run: |
+          echo "Checking if required secrets are configured..."
+          echo ""
+          
+          MISSING_SECRETS=()
+          
+          # Check each required secret
+          if [ -z "$AWS_ROLE_ARN" ]; then
+            MISSING_SECRETS+=("AWS_ROLE_ARN")
+          fi
+          
+          if [ -z "$EC2_INSTANCE_ID" ]; then
+            MISSING_SECRETS+=("EC2_INSTANCE_ID")
+          fi
+          
+          if [ -z "$N8N_HOST" ]; then
+            MISSING_SECRETS+=("N8N_HOST")
+          fi
+          
+          if [ -z "$N8N_ENCRYPTION_KEY" ]; then
+            MISSING_SECRETS+=("N8N_ENCRYPTION_KEY")
+          fi
+          
+          if [ -z "$DB_POSTGRESDB_HOST" ]; then
+            MISSING_SECRETS+=("DB_POSTGRESDB_HOST")
+          fi
+          
+          if [ -z "$DB_POSTGRESDB_PORT" ]; then
+            MISSING_SECRETS+=("DB_POSTGRESDB_PORT")
+          fi
+          
+          if [ -z "$DB_POSTGRESDB_DATABASE" ]; then
+            MISSING_SECRETS+=("DB_POSTGRESDB_DATABASE")
+          fi
+          
+          if [ -z "$DB_POSTGRESDB_USER" ]; then
+            MISSING_SECRETS+=("DB_POSTGRESDB_USER")
+          fi
+          
+          if [ -z "$DB_POSTGRESDB_PASSWORD" ]; then
+            MISSING_SECRETS+=("DB_POSTGRESDB_PASSWORD")
+          fi
+          
+          # If any secrets are missing, fail
+          if [ ${#MISSING_SECRETS[@]} -gt 0 ]; then
+            echo "❌ VALIDATION FAILED: Missing required secrets"
+            echo ""
+            echo "The following secrets are not configured in GitHub:"
+            for secret in "${MISSING_SECRETS[@]}"; do
+              echo "  - $secret"
+            done
+            echo ""
+            echo "Please configure these secrets in:"
+            echo "Repository → Settings → Secrets and variables → Actions"
+            echo ""
+            exit 1
+          fi
+          
+          echo "✅ All required secrets are configured"
+          echo ""
+          echo "Secrets found:"
+          echo "  ✓ AWS_ROLE_ARN"
+          echo "  ✓ EC2_INSTANCE_ID"
+          echo "  ✓ N8N_HOST"
+          echo "  ✓ N8N_ENCRYPTION_KEY"
+          echo "  ✓ DB_POSTGRESDB_HOST"
+          echo "  ✓ DB_POSTGRESDB_PORT"
+          echo "  ✓ DB_POSTGRESDB_DATABASE"
+          echo "  ✓ DB_POSTGRESDB_USER"
+          echo "  ✓ DB_POSTGRESDB_PASSWORD"
+
+  # ============================================================================
   # VALIDATE (PR only - full deployment simulation)
   # ============================================================================
   validate:
-    name: Validate Deployment
+    name: Validate Deployment Files
     runs-on: ubuntu-latest
+    needs: check-secrets
     if: github.event_name == 'pull_request'
     
     steps:
@@ -40,7 +133,7 @@ jobs:
 
       - name: Simulate .env file creation
         run: |
-          echo "Creating mock .env file..."
+          echo "Creating mock .env file (using test values)..."
           cat > /tmp/n8n.env << 'EOF'
           N8N_HOST=test.example.com
           N8N_ENCRYPTION_KEY=test-key-32-chars-minimum-length
@@ -96,6 +189,7 @@ jobs:
           echo "✅ PR VALIDATION PASSED"
           echo ""
           echo "Validated:"
+          echo "  ✓ All required secrets configured"
           echo "  ✓ docker-compose.yml syntax"
           echo "  ✓ .env file structure"
           echo "  ✓ docker-compose + .env compatibility"
@@ -103,7 +197,6 @@ jobs:
           echo "  ✓ n8n image availability"
           echo ""
           echo "Ready to deploy on merge"
-
   # ============================================================================
   # DEPLOY (push/merge only - using proven working method)
   # ============================================================================
