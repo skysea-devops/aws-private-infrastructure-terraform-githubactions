@@ -16,28 +16,26 @@ env:
   AWS_REGION: us-east-1
 
 jobs:
-  canary-test:
-    name: PR Canary Deployment Test
+  deploy:
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout PR code
+      - name: Checkout
         uses: actions/checkout@v4
 
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
+          aws-region: us-east-1
 
-      - name: Build .env for PR canary
+      - name: Build .env (local)
         run: |
           cat > /tmp/n8n.env << 'EOF'
-          N8N_HOST=localhost
-          N8N_PROTOCOL=http
+          N8N_HOST=${{ secrets.N8N_HOST }}
           N8N_ENCRYPTION_KEY=${{ secrets.N8N_ENCRYPTION_KEY }}
           GENERIC_TIMEZONE=Europe/Istanbul
-          
+
           DB_POSTGRESDB_HOST=${{ secrets.DB_POSTGRESDB_HOST }}
           DB_POSTGRESDB_PORT=${{ secrets.DB_POSTGRESDB_PORT }}
           DB_POSTGRESDB_DATABASE=${{ secrets.DB_POSTGRESDB_DATABASE }}
@@ -46,34 +44,25 @@ jobs:
           DB_POSTGRESDB_SSL=true
           EOF
 
-      - name: Encode files
+      - name: Base64 encode files for safe transfer
         run: |
           base64 -w0 docker-canary-deployment/docker-compose.yml > /tmp/compose.b64
-          base64 -w0 docker-canary-deployment/docker-compose.pr.yml > /tmp/compose_pr.b64
           base64 -w0 /tmp/n8n.env > /tmp/env.b64
 
-      - name: Run PR canary test
+      - name: Deploy on EC2 using SSM Run Command
         id: ssm
-        shell: bash
         run: |
-          test -n "${{ secrets.EC2_INSTANCE_ID }}" || (echo "EC2_INSTANCE_ID missing" && exit 1)
-          
-          COMPOSE_B64="$(cat /tmp/compose.b64)"
-          COMPOSE_PR_B64="$(cat /tmp/compose_pr.b64)"
-          ENV_B64="$(cat /tmp/env.b64)"
-          
-          CMD_ID=$(aws ssm send-command \
+          COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --comment "PR #${{ github.event.pull_request.number }} canary" \
-            --parameters "commands=[
-              \"set -eu\",
-              \"sudo mkdir -p /opt/n8n-pr\",
-              \"echo '${COMPOSE_B64}' | base64 -d | sudo tee /opt/n8n-pr/docker-compose.yml >/dev/null\",
-              \"echo '${COMPOSE_PR_B64}' | base64 -d | sudo tee /opt/n8n-pr/docker-compose.pr.yml >/dev/null\",
-              \"echo '${ENV_B64}' | base64 -d | sudo tee /opt/n8n-pr/.env >/dev/null\",
-              \"sudo chmod 600 /opt/n8n-pr/.env\",
-              \"cd /opt/n8n-pr\",
+            --comment "Deploy n8n via docker compose" \
+            --parameters commands="[
+              \"set -e\",
+              \"sudo mkdir -p /opt/n8n\",
+              \"sudo chown -R ubuntu:ubuntu /opt/n8n || true\",
+              \"echo $(cat /tmp/compose.b64) | base64 -d > /opt/n8n/docker-compose.pr.yml\",
+              \"echo $(cat /tmp/env.b64) | base64 -d > /opt/n8n/.env\",
+              \"cd /opt/n8n\",
               \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env config >/dev/null\",
               \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env pull\",
               \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env up -d --force-recreate\",
@@ -84,44 +73,13 @@ jobs:
               \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml down -v\"
             ]" \
             --query "Command.CommandId" --output text)
-          
-          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for result
-        shell: bash
+          echo "command_id=$COMMAND_ID" >> $GITHUB_OUTPUT
+          echo "SSM CommandId: $COMMAND_ID"
+
+      - name: Wait & show command output
         run: |
-          for i in {1..60}; do
-            STATUS=$(aws ssm get-command-invocation \
-              --command-id "${{ steps.ssm.outputs.command_id }}" \
-              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
-              --query "Status" --output text 2>/dev/null || echo "InProgress")
-            echo "[$i/60] $STATUS"
-            [[ "$STATUS" == "Success" ]] && exit 0
-            [[ "$STATUS" == "Failed" || "$STATUS" == "Cancelled" ]] && exit 1
-            sleep 5
-          done
-          exit 1
-
-      - name: Comment success
-        if: success()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## ✅ n8n Canary Test Passed\n\nPR #${{ github.event.pull_request.number }} deployed successfully on port 5679!\n\n- ✅ Container started\n- ✅ Health check passed\n- ✅ Cleanup done\n\nSafe to merge! 🚀`
-            })
-
-      - name: Comment failure
-        if: failure()
-        uses: actions/github-script@v7
-        with:
-          script: |
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `## ❌ n8n Canary Test Failed\n\nPR #${{ github.event.pull_request.number }} deployment failed. Check logs.`
-            })
+          aws ssm get-command-invocation \
+            --command-id "${{ steps.ssm.outputs.command_id }}" \
+            --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+            --output text
