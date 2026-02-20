@@ -1,0 +1,27 @@
+version: "3.8"
+
+# PR Canary Override
+# This file overrides the main docker-compose.yml for PR testing
+# Usage: docker compose -f docker-compose.yml -f docker-compose.pr.yml up
+
+services:
+  n8n:
+    container_name: pr-n8n
+    
+    # Override port: map 5679 on host to 5678 in container
+    ports:
+      - "5679:5678"
+    
+    # Override environment for PR testing (localhost only)
+    environment:
+      - N8N_HOST=localhost
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5679
+    
+    # Use separate volume for PR (will be deleted after test)
+    volumes:
+      - pr_n8n_data:/home/node/.n8n
+
+volumes:
+  pr_n8n_data:
+    driver: local

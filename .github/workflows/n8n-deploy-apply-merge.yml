@@ -1,0 +1,214 @@
+name: n8n Deploy to Production (Port 5678)
+
+on:
+  push:
+    branches: [ "dev", "main" ]
+    paths:
+      - "docker/**"
+      - ".github/workflows/n8n-deploy-prod.yml"
+  
+  workflow_dispatch:
+    inputs:
+      force_deploy:
+        description: 'Force deployment even if no changes'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  deploy-production:
+    name: Deploy n8n to Production
+    runs-on: ubuntu-latest
+    environment: production
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build .env for production
+        run: |
+          cat > /tmp/n8n.env << 'EOF'
+          # Production configuration
+          N8N_HOST=${{ secrets.N8N_HOST }}
+          N8N_PROTOCOL=https
+          N8N_ENCRYPTION_KEY=${{ secrets.N8N_ENCRYPTION_KEY }}
+          GENERIC_TIMEZONE=Europe/Istanbul
+          
+          # Database
+          DB_POSTGRESDB_HOST=${{ secrets.DB_POSTGRESDB_HOST }}
+          DB_POSTGRESDB_PORT=${{ secrets.DB_POSTGRESDB_PORT }}
+          DB_POSTGRESDB_DATABASE=${{ secrets.DB_POSTGRESDB_DATABASE }}
+          DB_POSTGRESDB_USER=${{ secrets.DB_POSTGRESDB_USER }}
+          DB_POSTGRESDB_PASSWORD=${{ secrets.DB_POSTGRESDB_PASSWORD }}
+          DB_POSTGRESDB_SSL=true
+          EOF
+
+      - name: Encode files to base64
+        run: |
+          base64 -w0 docker/docker-compose.yml > /tmp/compose.b64
+          base64 -w0 /tmp/n8n.env > /tmp/env.b64
+
+      - name: Deploy to EC2 (port 5678)
+        id: deploy
+        shell: bash
+        run: |
+          test -n "${{ secrets.EC2_INSTANCE_ID }}" || (echo "❌ EC2_INSTANCE_ID not set" && exit 1)
+          
+          COMPOSE_B64="$(cat /tmp/compose.b64)"
+          ENV_B64="$(cat /tmp/env.b64)"
+          
+          echo "🚀 Deploying n8n to production (port 5678)..."
+          
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "Deploy n8n production from ${{ github.ref_name }}" \
+            --parameters "commands=[
+              \"set -eu\",
+              \"echo '=== n8n Production Deployment ===\",
+              \"echo 'Branch: ${{ github.ref_name }}'\",
+              \"echo 'Commit: ${{ github.sha }}'\",
+              \"echo 'Deployed by: ${{ github.actor }}'\",
+              \"echo ''\",
+              
+              \"echo '1️⃣ Creating production directory...'\",
+              \"sudo mkdir -p /opt/n8n\",
+              
+              \"echo '2️⃣ Writing docker-compose.yml...'\",
+              \"echo '${COMPOSE_B64}' | base64 -d | sudo tee /opt/n8n/docker-compose.yml > /dev/null\",
+              
+              \"echo '3️⃣ Writing .env file...'\",
+              \"echo '${ENV_B64}' | base64 -d | sudo tee /opt/n8n/.env > /dev/null\",
+              \"sudo chmod 600 /opt/n8n/.env\",
+              
+              \"cd /opt/n8n\",
+              
+              \"echo '4️⃣ Validating compose configuration...'\",
+              \"sudo docker compose --env-file .env config > /dev/null || exit 1\",
+              
+              \"echo '5️⃣ Pulling latest n8n image...'\",
+              \"sudo docker compose --env-file .env pull\",
+              
+              \"echo '6️⃣ Deploying container...'\",
+              \"sudo docker compose --env-file .env up -d --force-recreate\",
+              
+              \"echo '7️⃣ Waiting for n8n to be ready...'\",
+              \"for i in \\\$(seq 1 30); do\",
+              \"  if curl -fsS http://127.0.0.1:5678/ >/dev/null 2>&1; then\",
+              \"    echo '✓ n8n is responding!'\",
+              \"    break\",
+              \"  fi\",
+              \"  echo 'Waiting... (\\\$i/30)'\",
+              \"  sleep 2\",
+              \"done\",
+              
+              \"echo '8️⃣ Final health check...'\",
+              \"if ! curl -fsS http://127.0.0.1:5678/ >/dev/null 2>&1; then\",
+              \"  echo '❌ Health check FAILED'\",
+              \"  echo ''\",
+              \"  echo 'Container logs:'\",
+              \"  sudo docker logs n8n --tail 100 2>&1 || true\",
+              \"  exit 1\",
+              \"fi\",
+              
+              \"echo '✅ Health check PASSED'\",
+              \"echo ''\",
+              \"echo 'Container status:'\",
+              \"sudo docker ps --filter name=n8n\",
+              \"echo ''\",
+              \"echo 'Recent logs (last 30 lines):'\",
+              \"sudo docker logs n8n --tail 30\",
+              
+              \"echo ''\",
+              \"echo '✅ Production Deployment Successful'\",
+              \"echo 'n8n is now running on port 5678'\",
+              \"echo 'Access at: https://${{ secrets.N8N_HOST }}'\"
+            ]" \
+            --query "Command.CommandId" \
+            --output text)
+          
+          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+          echo "SSM Command ID: $CMD_ID"
+
+      - name: Wait for deployment result
+        shell: bash
+        run: |
+          CMD_ID="${{ steps.deploy.outputs.command_id }}"
+          
+          echo "⏳ Monitoring deployment..."
+          echo ""
+          
+          for i in {1..60}; do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "$CMD_ID" \
+              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --query "Status" \
+              --output text 2>/dev/null || echo "InProgress")
+            
+            echo "[$i/60] Status: $STATUS"
+            
+            if [[ "$STATUS" == "Success" ]]; then
+              echo ""
+              echo "✅ PRODUCTION DEPLOYMENT SUCCESSFUL"
+              echo ""
+              echo "Output:"
+              echo "---"
+              aws ssm get-command-invocation \
+                --command-id "$CMD_ID" \
+                --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+                --query "StandardOutputContent" \
+                --output text
+              echo "---"
+              exit 0
+            fi
+            
+            if [[ "$STATUS" == "Failed" || "$STATUS" == "Cancelled" || "$STATUS" == "TimedOut" ]]; then
+              echo ""
+              echo "❌ PRODUCTION DEPLOYMENT FAILED"
+              echo ""
+              echo "Error output:"
+              echo "---"
+              aws ssm get-command-invocation \
+                --command-id "$CMD_ID" \
+                --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+                --query "StandardErrorContent" \
+                --output text
+              echo "---"
+              exit 1
+            fi
+            
+            sleep 5
+          done
+          
+          echo "❌ Timeout"
+          exit 1
+
+      - name: Create deployment summary
+        if: success()
+        run: |
+          echo "## ✅ n8n Production Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Deployment Details:**" >> $GITHUB_STEP_SUMMARY
+          echo "- Branch: \`${{ github.ref_name }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Commit: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- Deployed by: @${{ github.actor }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Image: \`n8nio/n8n:next\`" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Access:**" >> $GITHUB_STEP_SUMMARY
+          echo "- URL: https://${{ secrets.N8N_HOST }}" >> $GITHUB_STEP_SUMMARY
+          echo "- Port: 5678" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**SSM Command:** \`${{ steps.deploy.outputs.command_id }}\`" >> $GITHUB_STEP_SUMMARY

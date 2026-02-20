@@ -1,0 +1,127 @@
+name: n8n PR Canary Test (Port 5679)
+
+on:
+  pull_request:
+    branches: [ "dev", "main","phase-network-data" ]
+    paths:
+      - "docker/**"
+      - ".github/workflows/n8n-deploy-plan-pr.yml"
+
+permissions:
+  id-token: write
+  contents: read
+  pull-requests: write
+
+env:
+  AWS_REGION: us-east-1
+
+jobs:
+  canary-test:
+    name: PR Canary Deployment Test
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout PR code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Build .env for PR canary
+        run: |
+          cat > /tmp/n8n.env << 'EOF'
+          N8N_HOST=localhost
+          N8N_PROTOCOL=http
+          N8N_ENCRYPTION_KEY=${{ secrets.N8N_ENCRYPTION_KEY }}
+          GENERIC_TIMEZONE=Europe/Istanbul
+          
+          DB_POSTGRESDB_HOST=${{ secrets.DB_POSTGRESDB_HOST }}
+          DB_POSTGRESDB_PORT=${{ secrets.DB_POSTGRESDB_PORT }}
+          DB_POSTGRESDB_DATABASE=${{ secrets.DB_POSTGRESDB_DATABASE }}
+          DB_POSTGRESDB_USER=${{ secrets.DB_POSTGRESDB_USER }}
+          DB_POSTGRESDB_PASSWORD=${{ secrets.DB_POSTGRESDB_PASSWORD }}
+          DB_POSTGRESDB_SSL=true
+          EOF
+
+      - name: Encode files
+        run: |
+          base64 -w0 docker/docker-compose.yml > /tmp/compose.b64
+          base64 -w0 docker/docker-compose.pr.yml > /tmp/compose_pr.b64
+          base64 -w0 /tmp/n8n.env > /tmp/env.b64
+
+      - name: Run PR canary test
+        id: ssm
+        shell: bash
+        run: |
+          test -n "${{ secrets.EC2_INSTANCE_ID }}" || (echo "EC2_INSTANCE_ID missing" && exit 1)
+          
+          COMPOSE_B64="$(cat /tmp/compose.b64)"
+          COMPOSE_PR_B64="$(cat /tmp/compose_pr.b64)"
+          ENV_B64="$(cat /tmp/env.b64)"
+          
+          CMD_ID=$(aws ssm send-command \
+            --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
+            --document-name "AWS-RunShellScript" \
+            --comment "PR #${{ github.event.pull_request.number }} canary" \
+            --parameters "commands=[
+              \"set -eu\",
+              \"sudo mkdir -p /opt/n8n-pr\",
+              \"echo '${COMPOSE_B64}' | base64 -d | sudo tee /opt/n8n-pr/docker-compose.yml >/dev/null\",
+              \"echo '${COMPOSE_PR_B64}' | base64 -d | sudo tee /opt/n8n-pr/docker-compose.pr.yml >/dev/null\",
+              \"echo '${ENV_B64}' | base64 -d | sudo tee /opt/n8n-pr/.env >/dev/null\",
+              \"sudo chmod 600 /opt/n8n-pr/.env\",
+              \"cd /opt/n8n-pr\",
+              \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env config >/dev/null\",
+              \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env pull\",
+              \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml --env-file .env up -d --force-recreate\",
+              \"for i in \$(seq 1 30); do curl -fsS http://127.0.0.1:5679/ >/dev/null && break || true; sleep 2; done\",
+              \"curl -fsS http://127.0.0.1:5679/ >/dev/null || (sudo docker logs pr-n8n --tail 100 && exit 1)\",
+              \"echo 'Health check passed'\",
+              \"sudo docker logs pr-n8n --tail 50\",
+              \"sudo docker compose -p pr -f docker-compose.yml -f docker-compose.pr.yml down -v\"
+            ]" \
+            --query "Command.CommandId" --output text)
+          
+          echo "command_id=$CMD_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for result
+        shell: bash
+        run: |
+          for i in {1..60}; do
+            STATUS=$(aws ssm get-command-invocation \
+              --command-id "${{ steps.ssm.outputs.command_id }}" \
+              --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
+              --query "Status" --output text 2>/dev/null || echo "InProgress")
+            echo "[$i/60] $STATUS"
+            [[ "$STATUS" == "Success" ]] && exit 0
+            [[ "$STATUS" == "Failed" || "$STATUS" == "Cancelled" ]] && exit 1
+            sleep 5
+          done
+          exit 1
+
+      - name: Comment success
+        if: success()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ✅ n8n Canary Test Passed\n\nPR #${{ github.event.pull_request.number }} deployed successfully on port 5679!\n\n- ✅ Container started\n- ✅ Health check passed\n- ✅ Cleanup done\n\nSafe to merge! 🚀`
+            })
+
+      - name: Comment failure
+        if: failure()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: `## ❌ n8n Canary Test Failed\n\nPR #${{ github.event.pull_request.number }} deployment failed. Check logs.`
+            })
