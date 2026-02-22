@@ -198,3 +198,24 @@ variable "create_route53_records" {
   description = "Auto-create Route53 records for ACM validation and ALB alias"
   default     = false
 }
+
+# ============================================================================
+# SNS CONFIGURATION
+# ============================================================================
+
+variable "alert_email" {
+  description = "Email for CloudWatch alarms"
+  type        = string
+  default     = ""
+}
+
+variable "enable_guardduty" {
+  type    = bool
+  default = true
+}
+
+variable "enable_dashboard" {
+  type    = bool
+  default = true
+}
+
