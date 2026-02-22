@@ -151,9 +151,8 @@ jobs:
           
           # Build .env from AWS Secrets Manager 
           cat > /tmp/app.env << EOF
-          APP_HOST=${{ secrets.app_HOST }}
+          APP_HOST=${{ secrets.APP_HOST }}
           APP_ENCRYPTION_KEY=${app_KEY}
-          GENERIC_TIMEZONE=Europe/Istanbul
 
           DB_POSTGRESDB_HOST=${DB_HOST}
           DB_POSTGRESDB_PORT=${DB_PORT}
