@@ -5,6 +5,11 @@ on:
     - cron: "0 3 * * *"   # her gün 03:00 UTC
   workflow_dispatch:
 
+permissions:
+  contents: read
+  pull-requests: write  # Required to post comments on PRs
+  id-token: write       # Required for OIDC authentication with AWS
+
 env:
   AWS_REGION: us-east-1
   TF_VERSION: 1.5.0
