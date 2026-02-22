@@ -52,6 +52,7 @@ data "aws_iam_policy_document" "ec2_permissions" {
     ]
     resources = [
       aws_secretsmanager_secret.rds_credentials.arn,
+      aws_secretsmanager_secret.app_encryption_key.arn,
       aws_secretsmanager_secret.oidc.arn
     ]
   }

@@ -64,7 +64,7 @@ variable "health_check_path" {
 
 variable "host_header" {
   type        = string
-  description = "Host header for routing (e.g., n8n.example.com). Required for OIDC listener rule."
+  description = "Host header for routing (e.g., app.example.com). Required for OIDC listener rule."
   default     = ""
 }
 
@@ -197,4 +197,27 @@ variable "create_route53_records" {
   type        = bool
   description = "Auto-create Route53 records for ACM validation and ALB alias"
   default     = false
+}
+
+
+# ============================================================================
+# MONITORING VARIABLES 
+# ============================================================================
+
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications"
+  type        = string
+  default     = ""
+}
+
+variable "enable_guardduty" {
+  description = "Enable GuardDuty threat detection (account-level)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_dashboard" {
+  description = "Create CloudWatch dashboard for monitoring"
+  type        = bool
+  default     = true
 }

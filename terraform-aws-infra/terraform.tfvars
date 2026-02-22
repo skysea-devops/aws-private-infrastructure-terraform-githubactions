@@ -68,3 +68,11 @@ ec2_ami_id        = "ami-0b6c6ebed2801a5cb"  # ubuntu 24.04.LTS if blank uses la
 # ============================================================================
 
 certificate_arn = "arn:aws:acm:us-east-1:594515826734:certificate/4f53bb36-eea6-4c61-bd31-e79376187576" # if blank creates new ACM certificate
+
+# ============================================================================
+# Monitoring Configuration
+# ============================================================================
+
+alert_email      = "your-email@company.com"  # ← change!
+enable_guardduty = true
+enable_dashboard = true

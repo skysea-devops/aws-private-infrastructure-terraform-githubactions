@@ -1,17 +1,17 @@
-name: n8n Deploy (Validate PR + Deploy on Merge)
+name: app Deploy (Validate PR + Deploy on Merge)
 
 on:
   push:
     branches: [ "dev" ]
     paths:
       - "docker/**"
-      - ".github/workflows/validate-n8n-deployment.yml"
+      - ".github/workflows/validate-app-deployment.yml"
   
   pull_request:
     branches: [ "dev", "pr-validate-deployment" ]
     paths:
       - "docker/**"
-      - ".github/workflows/validate-n8n-deployment.yml"
+      - ".github/workflows/validate-app-deployment.yml"
 
   workflow_dispatch:
 
@@ -41,9 +41,9 @@ jobs:
       - name: Simulate .env file creation
         run: |
           echo "Creating mock .env file..."
-          cat > /tmp/n8n.env << 'EOF'
-          N8N_HOST=test.example.com
-          N8N_ENCRYPTION_KEY=test-key-32-chars-minimum-length
+          cat > /tmp/app.env << 'EOF'
+          app_HOST=test.example.com
+          app_ENCRYPTION_KEY=test-key-32-chars-minimum-length
           GENERIC_TIMEZONE=Europe/Istanbul
           
           DB_POSTGRESDB_HOST=test.rds.amazonaws.com
@@ -59,7 +59,7 @@ jobs:
       - name: Test docker-compose with .env
         run: |
           echo "Testing docker-compose with .env..."
-          cp /tmp/n8n.env docker/.env
+          cp /tmp/app.env docker/.env
           cd docker
           
           docker compose --env-file .env config > /dev/null
@@ -71,20 +71,20 @@ jobs:
           echo "Testing base64 encoding..."
           
           base64 -w0 docker/docker-compose.yml > /tmp/compose.b64
-          base64 -w0 /tmp/n8n.env > /tmp/env.b64
+          base64 -w0 /tmp/app.env > /tmp/env.b64
           
           # Verify decode
           base64 -d /tmp/compose.b64 > /tmp/compose.decoded
           base64 -d /tmp/env.b64 > /tmp/env.decoded
           
           diff docker/docker-compose.yml /tmp/compose.decoded
-          diff /tmp/n8n.env /tmp/env.decoded
+          diff /tmp/app.env /tmp/env.decoded
           
           echo "✓ Base64 encoding/decoding validated"
 
       - name: Test image availability
         run: |
-          echo "Testing n8n image..."
+          echo "Testing app image..."
           IMAGE=$(docker compose -f docker/docker-compose.yml config | grep 'image:' | head -1 | awk '{print $2}')
           echo "Image: $IMAGE"
           docker pull $IMAGE
@@ -100,7 +100,7 @@ jobs:
           echo "  ✓ .env file structure"
           echo "  ✓ docker-compose + .env compatibility"
           echo "  ✓ Base64 encoding"
-          echo "  ✓ n8n image availability"
+          echo "  ✓ app image availability"
           echo ""
           echo "Ready to deploy on merge"
 
@@ -122,25 +122,50 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
-      - name: Build .env (local)
+      - name: Build .env from AWS Secrets Manager 
         run: |
-          cat > /tmp/n8n.env << 'EOF'
-          N8N_HOST=${{ secrets.N8N_HOST }}
-          N8N_ENCRYPTION_KEY=${{ secrets.N8N_ENCRYPTION_KEY }}
+          echo "Fetching secrets from AWS Secrets Manager..."
+          
+          # Get app encryption key from AWS Secrets Manager
+          app_KEY=$(aws secretsmanager get-secret-value \
+            --secret-id "${{ secrets.PROJECT }}/${{ secrets.ENV }}/app-encryption-key" \
+            --query 'SecretString' \
+            --output text \
+            --region us-east-1)
+          
+          # Get RDS credentials from AWS Secrets Manager
+          RDS_SECRET=$(aws secretsmanager get-secret-value \
+            --secret-id "${{ secrets.PROJECT }}/${{ secrets.ENV }}/rds-credentials" \
+            --query 'SecretString' \
+            --output text \
+            --region us-east-1)
+          
+          DB_HOST=$(echo $RDS_SECRET | jq -r '.host')
+          DB_PORT=$(echo $RDS_SECRET | jq -r '.port')
+          DB_NAME=$(echo $RDS_SECRET | jq -r '.dbname')
+          DB_USER=$(echo $RDS_SECRET | jq -r '.username')
+          DB_PASS=$(echo $RDS_SECRET | jq -r '.password')
+          
+          # Build .env from AWS Secrets Manager 
+          cat > /tmp/app.env << EOF
+          app_HOST=${{ secrets.app_HOST }}
+          app_ENCRYPTION_KEY=${app_KEY}
           GENERIC_TIMEZONE=Europe/Istanbul
 
-          DB_POSTGRESDB_HOST=${{ secrets.DB_POSTGRESDB_HOST }}
-          DB_POSTGRESDB_PORT=${{ secrets.DB_POSTGRESDB_PORT }}
-          DB_POSTGRESDB_DATABASE=${{ secrets.DB_POSTGRESDB_DATABASE }}
-          DB_POSTGRESDB_USER=${{ secrets.DB_POSTGRESDB_USER }}
-          DB_POSTGRESDB_PASSWORD=${{ secrets.DB_POSTGRESDB_PASSWORD }}
+          DB_POSTGRESDB_HOST=${DB_HOST}
+          DB_POSTGRESDB_PORT=${DB_PORT}
+          DB_POSTGRESDB_DATABASE=${DB_NAME}
+          DB_POSTGRESDB_USER=${DB_USER}
+          DB_POSTGRESDB_PASSWORD=${DB_PASS}
           DB_POSTGRESDB_SSL=true
           EOF
+          
+          echo " .env built from AWS Secrets Manager"
 
       - name: Base64 encode files for safe transfer
         run: |
           base64 -w0 docker/docker-compose.yml > /tmp/compose.b64
-          base64 -w0 /tmp/n8n.env > /tmp/env.b64
+          base64 -w0 /tmp/app.env > /tmp/env.b64
 
       - name: Deploy on EC2 using SSM Run Command
         id: ssm
@@ -148,18 +173,18 @@ jobs:
           COMMAND_ID=$(aws ssm send-command \
             --instance-ids "${{ secrets.EC2_INSTANCE_ID }}" \
             --document-name "AWS-RunShellScript" \
-            --comment "Deploy n8n via docker compose" \
+            --comment "Deploy app via docker compose" \
             --parameters commands="[
               \"set -e\",
-              \"sudo mkdir -p /opt/n8n\",
-              \"sudo chown -R ubuntu:ubuntu /opt/n8n || true\",
-              \"echo $(cat /tmp/compose.b64) | base64 -d > /opt/n8n/docker-compose.yml\",
-              \"echo $(cat /tmp/env.b64) | base64 -d > /opt/n8n/.env\",
-              \"cd /opt/n8n\",
+              \"sudo mkdir -p /opt/app\",
+              \"sudo chown -R ubuntu:ubuntu /opt/app || true\",
+              \"echo $(cat /tmp/compose.b64) | base64 -d > /opt/app/docker-compose.yml\",
+              \"echo $(cat /tmp/env.b64) | base64 -d > /opt/app/.env\",
+              \"cd /opt/app\",
               \"sudo docker compose version\",
               \"sudo docker compose pull\",
               \"sudo docker compose up -d\",
-              \"sudo docker ps --filter name=n8n\"
+              \"sudo docker ps --filter name=app\"
             ]" \
             --query "Command.CommandId" --output text)
 
