@@ -64,7 +64,7 @@ variable "health_check_path" {
 
 variable "host_header" {
   type        = string
-  description = "Host header for routing (e.g., n8n.example.com). Required for OIDC listener rule."
+  description = "Host header for routing (e.g., app.example.com). Required for OIDC listener rule."
   default     = ""
 }
 
@@ -199,23 +199,4 @@ variable "create_route53_records" {
   default     = false
 }
 
-# ============================================================================
-# SNS CONFIGURATION
-# ============================================================================
-
-variable "alert_email" {
-  description = "Email for CloudWatch alarms"
-  type        = string
-  default     = ""
-}
-
-variable "enable_guardduty" {
-  type    = bool
-  default = true
-}
-
-variable "enable_dashboard" {
-  type    = bool
-  default = true
-}
 

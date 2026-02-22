@@ -235,14 +235,3 @@ output "service_port" {
 }
 
 
-# ============================================================================
-# SNS OUTPUTS
-# ============================================================================
-
-output "sns_topic_arn" {
-  value = aws_sns_topic.alerts.arn
-}
-
-output "cloudwatch_dashboard_url" {
-  value = var.enable_dashboard ? "https://console.aws.amazon.com/cloudwatch/home?region=${var.aws_region}#dashboards:name=${aws_cloudwatch_dashboard.main[0].dashboard_name}" : null
-}
