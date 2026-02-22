@@ -52,6 +52,7 @@ jobs:
 
       - name: Terraform Plan (Drift Check)
         id: plan
+        working-directory: terraform-aws-infra
         run: |
           terraform plan -detailed-exitcode -no-color > plan.txt
           echo "exitcode=$?" >> $GITHUB_OUTPUT
