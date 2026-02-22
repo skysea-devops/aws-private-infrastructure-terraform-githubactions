@@ -46,6 +46,11 @@ jobs:
       # Step 6: Terraform commands
       # ============================================================
 
+      - name: Show Terraform locks (DynamoDB)
+        working-directory: terraform-aws-infra
+        run: |
+            aws dynamodb scan --table-name "${{ secrets.TF_LOCK_TABLE }}" --max-items 20
+
 
       - name: Terraform Init
         id: init
@@ -63,9 +68,14 @@ jobs:
       - name: Terraform Plan (Drift Check)
         id: plan
         working-directory: terraform-aws-infra
+        timeout-minutes: 15
         run: |
-          terraform plan -detailed-exitcode -no-color > plan.txt
-          echo "exitcode=$?" >> $GITHUB_OUTPUT
+          set -euxo pipefail
+            export TF_LOG=INFO
+            export TF_LOG_PATH=tf.log
+            terraform plan -lock-timeout=2m -detailed-exitcode -no-color > plan.txt
+            echo "exitcode=$?" >> $GITHUB_OUTPUT
+ 
         continue-on-error: true
 
       - name: Fail if Terraform Error
@@ -79,3 +89,12 @@ jobs:
             --topic-arn ${{ secrets.SNS_TOPIC_ARN }} \
             --subject " Terraform Drift Detected" \
             --message "Terraform drift detected in production environment. Please review immediately."
+      
+      - name: Upload TF logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+            name: tf-logs
+            path: |
+                terraform-aws-infra/plan.txt
+                terraform-aws-infra/tf.log
