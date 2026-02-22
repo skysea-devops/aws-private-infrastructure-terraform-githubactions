@@ -122,37 +122,56 @@ jobs:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: us-east-1
 
-      - name: Build .env from AWS Secrets Manager 
+      - name: Build .env from AWS Secrets Manager
         env:
-          PROJECT: "myproject"  
-          ENV: "dev"    
+          PROJECT: myproject
+          ENV: dev
         run: |
           echo "Fetching secrets from AWS Secrets Manager..."
           
-          # Get app encryption key from AWS Secrets Manager
-          app_KEY=$(aws secretsmanager get-secret-value \
-            --secret-id "${{ secrets.PROJECT }}/${{ secrets.ENV }}/app-encryption-key" \
+          # Get app encryption key (variable adı: APP_KEY - büyük harf)
+          echo "→ Fetching ${PROJECT}/${ENV}/app-encryption-key..."
+          APP_KEY=$(aws secretsmanager get-secret-value \
+            --secret-id "${PROJECT}/${ENV}/app-encryption-key" \
             --query 'SecretString' \
             --output text \
-            --region us-east-1)
+            --region us-east-1) || {
+            echo "❌ Error: Secret not found: ${PROJECT}/${ENV}/app-encryption-key"
+            echo "Available secrets:"
+            aws secretsmanager list-secrets --region us-east-1 | jq -r '.SecretList[].Name' | grep "${PROJECT}/${ENV}"
+            exit 1
+          }
           
-          # Get RDS credentials from AWS Secrets Manager
+          # Verify not PLACEHOLDER
+          if [ "$APP_KEY" = "PLACEHOLDER-REPLACE-VIA-GITHUB-ACTIONS" ]; then
+            echo "❌ Secret still has PLACEHOLDER value"
+            echo "Run populate-secrets workflow first!"
+            exit 1
+          fi
+          
+          echo "✅ App encryption key fetched (length: ${#APP_KEY})"
+          
+          # Get RDS credentials
+          echo "→ Fetching ${PROJECT}/${ENV}/rds-credentials..."
           RDS_SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id "${{ secrets.PROJECT }}/${{ secrets.ENV }}/rds-credentials" \
+            --secret-id "${PROJECT}/${ENV}/rds-credentials" \
             --query 'SecretString' \
             --output text \
             --region us-east-1)
           
-          DB_HOST=$(echo $RDS_SECRET | jq -r '.host')
-          DB_PORT=$(echo $RDS_SECRET | jq -r '.port')
-          DB_NAME=$(echo $RDS_SECRET | jq -r '.dbname')
-          DB_USER=$(echo $RDS_SECRET | jq -r '.username')
-          DB_PASS=$(echo $RDS_SECRET | jq -r '.password')
+          DB_HOST=$(echo "$RDS_SECRET" | jq -r '.host')
+          DB_PORT=$(echo "$RDS_SECRET" | jq -r '.port')
+          DB_NAME=$(echo "$RDS_SECRET" | jq -r '.dbname')
+          DB_USER=$(echo "$RDS_SECRET" | jq -r '.username')
+          DB_PASS=$(echo "$RDS_SECRET" | jq -r '.password')
           
-          # Build .env from AWS Secrets Manager 
+          echo "✅ RDS credentials fetched"
+          
+          # Build .env (tutarlı değişken isimleri)
           cat > /tmp/app.env << EOF
           APP_HOST=${{ secrets.APP_HOST }}
-          APP_ENCRYPTION_KEY=${app_KEY}
+          APP_ENCRYPTION_KEY=${APP_KEY}
+          GENERIC_TIMEZONE=Europe/Istanbul
 
           DB_POSTGRESDB_HOST=${DB_HOST}
           DB_POSTGRESDB_PORT=${DB_PORT}
@@ -162,7 +181,7 @@ jobs:
           DB_POSTGRESDB_SSL=true
           EOF
           
-          echo " .env built from AWS Secrets Manager"
+          echo "✅ .env built successfully"
 
       - name: Base64 encode files for safe transfer
         run: |
