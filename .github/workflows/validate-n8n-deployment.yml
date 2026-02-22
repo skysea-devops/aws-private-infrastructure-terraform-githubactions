@@ -129,7 +129,7 @@ jobs:
         run: |
           echo "Fetching secrets from AWS Secrets Manager..."
           
-          # Get app encryption key (variable adı: APP_KEY - büyük harf)
+          # Get app encryption key 
           echo "→ Fetching ${PROJECT}/${ENV}/app-encryption-key..."
           APP_KEY=$(aws secretsmanager get-secret-value \
             --secret-id "${PROJECT}/${ENV}/app-encryption-key" \
@@ -154,7 +154,7 @@ jobs:
           # Get RDS credentials
           echo "→ Fetching ${PROJECT}/${ENV}/rds-credentials..."
           RDS_SECRET=$(aws secretsmanager get-secret-value \
-            --secret-id "${PROJECT}/${ENV}/rds-credentials" \
+            --secret-id "${PROJECT}/${ENV}/rds-credentials3" \
             --query 'SecretString' \
             --output text \
             --region us-east-1)
