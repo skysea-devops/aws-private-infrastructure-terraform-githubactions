@@ -43,7 +43,7 @@ jobs:
           aws sts get-caller-identity
           echo "::endgroup::"
       # ============================================================
-      # Step 6: Terraform commands
+      # Terraform commands
       # ============================================================
 
       - name: Show Terraform locks (DynamoDB)
@@ -73,7 +73,7 @@ jobs:
           set -euxo pipefail
             export TF_LOG=INFO
             export TF_LOG_PATH=tf.log
-            terraform plan -lock-timeout=2m -detailed-exitcode -no-color > plan.txt
+            terraform plan -lock=false -detailed-exitcode -no-color > plan.txt
             echo "exitcode=$?" >> $GITHUB_OUTPUT
  
         continue-on-error: true
