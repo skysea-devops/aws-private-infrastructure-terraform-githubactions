@@ -200,3 +200,24 @@ variable "create_route53_records" {
 }
 
 
+# ============================================================================
+# MONITORING VARIABLES 
+# ============================================================================
+
+variable "alert_email" {
+  description = "Email address for CloudWatch alarm notifications"
+  type        = string
+  default     = ""
+}
+
+variable "enable_guardduty" {
+  description = "Enable GuardDuty threat detection (account-level)"
+  type        = bool
+  default     = true
+}
+
+variable "enable_dashboard" {
+  description = "Create CloudWatch dashboard for monitoring"
+  type        = bool
+  default     = true
+}
