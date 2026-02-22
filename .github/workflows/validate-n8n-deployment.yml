@@ -123,6 +123,9 @@ jobs:
           aws-region: us-east-1
 
       - name: Build .env from AWS Secrets Manager 
+        env:
+          PROJECT: "myproject"  
+          ENV: "dev"    
         run: |
           echo "Fetching secrets from AWS Secrets Manager..."
           
@@ -197,4 +200,3 @@ jobs:
             --command-id "${{ steps.ssm.outputs.command_id }}" \
             --instance-id "${{ secrets.EC2_INSTANCE_ID }}" \
             --output text
-            
