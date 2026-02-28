@@ -1,14 +1,14 @@
 # ============================================================================
-# AMI DATA SOURCE
+# AMI DATA SOURCE - Ubuntu 24.04 LTS
 # ============================================================================
 
-data "aws_ami" "amazon_linux_2023" {
+data "aws_ami" "ubuntu" {
   most_recent = true
-  owners      = ["amazon"]
+  owners      = ["099720109477"] # Canonical
 
   filter {
     name   = "name"
-    values = ["al2023-ami-*-x86_64"]
+    values = ["ubuntu/images/hvm-ssd-gp3/ubuntu-noble-24.04-amd64-server-*"]
   }
 
   filter {
@@ -77,6 +77,17 @@ data "aws_iam_policy_document" "ec2_permissions" {
     ]
     resources = ["*"]
   }
+
+  # YENİ: user_data'nın register-targets yapabilmesi için
+  statement {
+    sid    = "RegisterTargets"
+    effect = "Allow"
+    actions = [
+      "elasticloadbalancing:RegisterTargets",
+      "elasticloadbalancing:DescribeTargetHealth"
+    ]
+    resources = ["*"]
+  }
 }
 
 resource "aws_iam_role_policy" "ec2_permissions" {
@@ -100,16 +111,15 @@ resource "aws_iam_instance_profile" "ec2_service" {
   tags = local.tags
 }
 
-
-
 # ============================================================================
 # EC2 INSTANCE
 # ============================================================================
 
 resource "aws_instance" "service" {
-  ami                    = var.ec2_ami_id != "" ? var.ec2_ami_id : data.aws_ami.amazon_linux_2023.id
+  # terraform.tfvars'ta ec2_ami_id doluysa onu kullan, yoksa Ubuntu 24.04 LTS data source'u
+  ami                    = var.ec2_ami_id != "" ? var.ec2_ami_id : data.aws_ami.ubuntu.id
   instance_type          = var.ec2_instance_type
-  subnet_id              = aws_subnet.public["0"].id
+  subnet_id              = aws_subnet.private["0"].id
   vpc_security_group_ids = [aws_security_group.service.id]
   iam_instance_profile   = aws_iam_instance_profile.ec2_service.name
 
@@ -118,7 +128,7 @@ resource "aws_instance" "service" {
   metadata_options {
     http_endpoint               = "enabled"
     http_tokens                 = "required"
-    http_put_response_hop_limit = 1
+    http_put_response_hop_limit = 2  #  1→2: Docker container içinden IMDSv2 erişimi için gerekli
     instance_metadata_tags      = "enabled"
   }
 
@@ -129,7 +139,7 @@ resource "aws_instance" "service" {
     delete_on_termination = true
   }
 
-  user_data_base64  = base64encode(templatefile("${path.module}/user_data.sh", {
+  user_data_base64 = base64encode(templatefile("${path.module}/user_data.sh", {
     project          = var.project
     env              = var.env
     aws_region       = var.aws_region
@@ -144,4 +154,3 @@ resource "aws_instance" "service" {
 
   depends_on = [aws_db_instance.this]
 }
-

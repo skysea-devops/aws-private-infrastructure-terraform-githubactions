@@ -74,3 +74,7 @@ else
   exit 1
 fi
 
+# ===== App dizinini hazırla =====
+echo "=== Uygulama dizini hazırlanıyor ==="
+mkdir -p /opt/app
+chown -R ubuntu:ubuntu /opt/app
